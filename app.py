@@ -69,13 +69,9 @@ st.markdown("""
 
     /* ── Streamlit Chrome Removal ── */
     .stApp { background: var(--bg-0) !important; font-family: 'Inter', -apple-system, sans-serif !important; }
-    header[data-testid="stHeader"] { background: transparent !important; }
-    #MainMenu { display: none !important; }
+    header[data-testid="stHeader"] { background: var(--bg-0) !important; }
     footer { display: none !important; }
     [data-testid="stDecoration"] { display: none !important; }
-    .stDeployButton { display: none !important; }
-    /* Hide toolbar items but NOT the sidebar toggle */
-    [data-testid="stToolbar"] > div { display: none !important; }
     .stApp > .main > .block-container {
         padding: 1.25rem 2rem 2rem 2rem !important;
         max-width: 100% !important;
@@ -774,7 +770,7 @@ st.markdown(f"""
         <img src="data:image/png;base64,{_logo_b64}" style="height:30px;">
         <div>
             <div class="top-bar-title">Logistics Optimizer</div>
-            <div class="top-bar-sub">Government Operations Center &mdash; Automated Delivery Intelligence</div>
+            <div class="top-bar-sub">Automated Delivery Intelligence</div>
         </div>
     </div>
     <div class="top-bar-right">
