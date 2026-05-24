@@ -1030,10 +1030,10 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-        # Company Map — show only filtered shipments
-        if micro_filtered:
-            st.markdown('<div class="sec-title">Company Routes</div>', unsafe_allow_html=True)
-            render_map(micro_filtered, shipments, height=400, map_key="micro_overview_map")
+        # Company Map — always show, use filtered shipments for routes if any
+        st.markdown('<div class="sec-title">Company Routes</div>', unsafe_allow_html=True)
+        map_shipments = micro_filtered if micro_filtered else comp_shipments
+        render_map(map_shipments, shipments, height=400, map_key="micro_overview_map")
 
         # Fleet Summary Table
         st.markdown('<div class="sec-title">Fleet Summary</div>', unsafe_allow_html=True)
