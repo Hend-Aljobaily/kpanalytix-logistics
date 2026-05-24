@@ -1114,15 +1114,17 @@ else:
         if sel_driver["assigned_shipment_id"]:
             ship_match = next((s for s in comp_shipments if s["id"] == sel_driver["assigned_shipment_id"]), None)
             if ship_match:
-                shipment_info = f"""
-                <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
-                    <div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-2);margin-bottom:8px;">Current Assignment</div>
-                    <div style="font-size:0.85rem;color:var(--text-0);">
-                        <b>{ship_match["id"]}</b> &mdash; {ship_match["port"].split("(")[0].strip()} &rarr; {ship_match["destination"]}
-                        <span class="pill {"pill-green" if ship_match["time_status"] == "On Time" else ("pill-amber" if ship_match["time_status"] == "At Risk" else "pill-red")}" style="margin-left:8px;">{ship_match["time_status"]}</span>
-                    </div>
-                </div>
-                """
+                _ts = ship_match["time_status"]
+                _ts_pill = "pill-green" if _ts == "On Time" else ("pill-amber" if _ts == "At Risk" else "pill-red")
+                _port_short = ship_match["port"].split("(")[0].strip()
+                shipment_info = (
+                    '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">'
+                    '<div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-2);margin-bottom:8px;">Current Assignment</div>'
+                    f'<div style="font-size:0.85rem;color:var(--text-0);">'
+                    f'<b>{ship_match["id"]}</b> &mdash; {_port_short} &rarr; {ship_match["destination"]}'
+                    f' <span class="pill {_ts_pill}" style="margin-left:8px;">{_ts}</span>'
+                    '</div></div>'
+                )
 
         st.markdown(f"""
         <div class="driver-card">
