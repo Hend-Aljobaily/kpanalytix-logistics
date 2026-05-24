@@ -1,5 +1,5 @@
 """
-Saudi Arabia & GCC Shipping Optimizer
+Logistics Optimizer
 Automated Government Operations Center — Live Shipment Intelligence.
 """
 
@@ -26,7 +26,7 @@ from company_data import generate_company_data, get_company_summary, COMPANIES
 
 # ── Page Config ──
 st.set_page_config(
-    page_title="Shipping Optimizer",
+    page_title="Logistics Optimizer",
     page_icon="🚛",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -69,28 +69,13 @@ st.markdown("""
 
     /* ── Streamlit Chrome Removal ── */
     .stApp { background: var(--bg-0) !important; font-family: 'Inter', -apple-system, sans-serif !important; }
-    header[data-testid="stHeader"] {
-        background: transparent !important;
-        border: none !important;
-        height: auto !important;
-        min-height: 2.5rem !important;
-        pointer-events: auto !important;
-    }
+    header[data-testid="stHeader"] { background: transparent !important; }
     #MainMenu { display: none !important; }
     footer { display: none !important; }
-    [data-testid="stToolbar"] { display: none !important; }
     [data-testid="stDecoration"] { display: none !important; }
     .stDeployButton { display: none !important; }
-    /* Keep sidebar collapse/expand button always visible */
-    button[data-testid="stSidebarCollapsedControl"],
-    [data-testid="stSidebarCollapsedControl"],
-    [data-testid="collapsedControl"] {
-        display: block !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-        color: var(--text-0) !important;
-        z-index: 999 !important;
-    }
+    /* Hide toolbar items but NOT the sidebar toggle */
+    [data-testid="stToolbar"] > div { display: none !important; }
     .stApp > .main > .block-container {
         padding: 1.25rem 2rem 2rem 2rem !important;
         max-width: 100% !important;
@@ -788,7 +773,7 @@ st.markdown(f"""
     <div style="display:flex;align-items:center;gap:18px;">
         <img src="data:image/png;base64,{_logo_b64}" style="height:30px;">
         <div>
-            <div class="top-bar-title">Saudi Arabia & GCC Shipping Optimizer</div>
+            <div class="top-bar-title">Logistics Optimizer</div>
             <div class="top-bar-sub">Government Operations Center &mdash; Automated Delivery Intelligence</div>
         </div>
     </div>
