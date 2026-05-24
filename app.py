@@ -491,6 +491,8 @@ if "selected_shipment_id" not in st.session_state:
     st.session_state.selected_shipment_id = None
 if "company_data" not in st.session_state:
     st.session_state.company_data = None
+if "view_mode" not in st.session_state:
+    st.session_state.view_mode = "Macro"
 
 if (datetime.now() - st.session_state.last_refresh).seconds > 3600:
     st.session_state.shipments = generate_shipments(15)
@@ -780,44 +782,92 @@ st.markdown(f"""
 # SIDEBAR
 # ══════════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown(f"""
-    <div style="padding:4px 0 12px 0;">
-        <div style="font-size:0.92rem;font-weight:700;color:var(--text-0);margin-bottom:2px;">Filters</div>
-        <div style="font-size:0.72rem;color:var(--text-2);">Narrow down shipment data</div>
-    </div>
-    """, unsafe_allow_html=True)
+    # Logo
+    st.image("assets/logo.png", use_container_width=True)
+    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
-    filter_ports = st.multiselect("Port", list(PORTS.keys()), default=[])
-    filter_status = st.multiselect("Status", ["Vessel En Route", "At Port", "In Transit", "Delivered"], default=[])
-    filter_priority = st.multiselect("Priority", ["Critical", "High", "Standard"], default=[])
-    filter_delivery = st.multiselect("Delivery Status", ["On Time", "At Risk", "Delayed"], default=[])
+    # View selector
+    view_mode = st.radio(
+        "View",
+        ["Macro", "Micro"],
+        index=0 if st.session_state.view_mode == "Macro" else 1,
+        horizontal=True,
+        key="view_mode_radio",
+    )
+    st.session_state.view_mode = view_mode
 
-    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
-    # Custom alerts (no native st.error/warning/success)
-    critical_delayed = [s for s in shipments if s["priority"] == "Critical" and s["time_status"] == "Delayed"]
-    needs_action = [s for s in shipments if s["recommendation"]["recovery_action"]]
+    # ── Macro Filters ──
+    filter_ports = []
+    filter_status = []
+    filter_priority = []
+    filter_delivery = []
+    micro_sb_company = None
+    micro_sb_status = []
+    micro_sb_priority = []
+    micro_sb_delivery = []
 
-    if critical_delayed:
-        details = "".join(
-            f'<div class="sb-detail">{s["id"]} &mdash; {s["port"].split("(")[0].strip()} &rarr; {s["destination"]}</div>'
-            for s in critical_delayed
-        )
-        st.markdown(
-            f'<div class="sb-alert crit"><strong>{len(critical_delayed)} critical shipment(s) delayed</strong>{details}</div>',
-            unsafe_allow_html=True,
-        )
+    if view_mode == "Macro":
+        st.markdown("""
+        <div style="padding:4px 0 12px 0;">
+            <div style="font-size:0.92rem;font-weight:700;color:var(--text-0);margin-bottom:2px;">Filters</div>
+            <div style="font-size:0.72rem;color:var(--text-2);">Narrow down shipment data</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        filter_ports = st.multiselect("Port", list(PORTS.keys()), default=[], key="macro_port")
+        filter_status = st.multiselect("Status", ["Vessel En Route", "At Port", "In Transit", "Delivered"], default=[], key="macro_status")
+        filter_priority = st.multiselect("Priority", ["Critical", "High", "Standard"], default=[], key="macro_priority")
+        filter_delivery = st.multiselect("Delivery Status", ["On Time", "At Risk", "Delayed"], default=[], key="macro_delivery")
+
+        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+        # Custom alerts
+        critical_delayed = [s for s in shipments if s["priority"] == "Critical" and s["time_status"] == "Delayed"]
+        needs_action = [s for s in shipments if s["recommendation"]["recovery_action"]]
+
+        if critical_delayed:
+            details = "".join(
+                f'<div class="sb-detail">{s["id"]} &mdash; {s["port"].split("(")[0].strip()} &rarr; {s["destination"]}</div>'
+                for s in critical_delayed
+            )
+            st.markdown(
+                f'<div class="sb-alert crit"><strong>{len(critical_delayed)} critical shipment(s) delayed</strong>{details}</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<div class="sb-alert ok">No critical delays</div>',
+                unsafe_allow_html=True,
+            )
+
+        if needs_action:
+            st.markdown(
+                f'<div class="sb-alert warn"><strong>{len(needs_action)} shipment(s)</strong> require attention</div>',
+                unsafe_allow_html=True,
+            )
+
     else:
-        st.markdown(
-            '<div class="sb-alert ok">No critical delays</div>',
-            unsafe_allow_html=True,
-        )
+        # ── Micro Filters ──
+        st.markdown("""
+        <div style="padding:4px 0 12px 0;">
+            <div style="font-size:0.92rem;font-weight:700;color:var(--text-0);margin-bottom:2px;">Company Filters</div>
+            <div style="font-size:0.72rem;color:var(--text-2);">Filter by company & shipment data</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    if needs_action:
-        st.markdown(
-            f'<div class="sb-alert warn"><strong>{len(needs_action)} shipment(s)</strong> require attention</div>',
-            unsafe_allow_html=True,
+        company_names_sb = {c["id"]: c["name"] for c in company_data["companies"]}
+        company_ids_sb = list(company_names_sb.keys())
+        micro_sb_company = st.selectbox(
+            "Company",
+            options=company_ids_sb,
+            format_func=lambda x: company_names_sb[x],
+            key="micro_sb_company",
         )
+        micro_sb_status = st.multiselect("Status", ["Vessel En Route", "At Port", "In Transit", "Delivered"], default=[], key="micro_sb_status")
+        micro_sb_priority = st.multiselect("Priority", ["Critical", "High", "Standard"], default=[], key="micro_sb_priority")
+        micro_sb_delivery = st.multiselect("Delivery Status", ["On Time", "At Risk", "Delayed"], default=[], key="micro_sb_delivery")
 
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     st.markdown(
@@ -829,14 +879,6 @@ with st.sidebar:
         st.session_state.company_data = None
         st.session_state.last_refresh = datetime.now()
         st.rerun()
-
-    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-    st.markdown(
-        '<div style="font-size:0.7rem;color:var(--text-2);padding:4px 0;border-top:1px solid var(--border);padding-top:10px;">'
-        'Sidebar filters apply to the <b>Macro</b> view.<br>Use inline filters in the <b>Micro</b> view.'
-        '</div>',
-        unsafe_allow_html=True,
-    )
 
 # ══════════════════════════════════════════════════════════════════
 # APPLY FILTERS (for Macro)
@@ -854,14 +896,9 @@ if filter_delivery:
 f_summary = get_shipment_summary(filtered)
 
 # ══════════════════════════════════════════════════════════════════
-# TOP-LEVEL TABS: MACRO / MICRO
+# VIEW: MACRO or MICRO (controlled by sidebar)
 # ══════════════════════════════════════════════════════════════════
-macro_tab, micro_tab = st.tabs(["Macro", "Micro"])
-
-# ══════════════════════════════════════════════════════════════════
-# MACRO TAB — Original dashboard (unchanged)
-# ══════════════════════════════════════════════════════════════════
-with macro_tab:
+if view_mode == "Macro":
     # KPI Row 1
     pct_on_time = round(f_summary["on_time"] / f_summary["total"] * 100) if f_summary["total"] else 0
     st.markdown(f"""
@@ -930,25 +967,24 @@ with macro_tab:
 
 
 # ══════════════════════════════════════════════════════════════════
-# MICRO TAB — Company Dashboard
+# MICRO VIEW — Company Dashboard
 # ══════════════════════════════════════════════════════════════════
-with micro_tab:
-    # Company Selector
-    company_names = {c["id"]: c["name"] for c in company_data["companies"]}
-    company_ids = list(company_names.keys())
-
-    selected_company_id = st.selectbox(
-        "Select Company",
-        options=company_ids,
-        format_func=lambda x: company_names[x],
-        key="micro_company_selector",
-    )
-
+else:
+    selected_company_id = micro_sb_company
     sel_company = next(c for c in company_data["companies"] if c["id"] == selected_company_id)
     comp_shipments = [s for s in shipments if s.get("company_id") == selected_company_id]
     comp_drivers = company_data["drivers"].get(selected_company_id, [])
     comp_trucks = company_data["trucks"].get(selected_company_id, [])
     comp_summary = get_company_summary(selected_company_id, shipments, company_data["drivers"], company_data["trucks"])
+
+    # Apply sidebar micro filters to company shipments
+    micro_filtered_shipments = comp_shipments
+    if micro_sb_status:
+        micro_filtered_shipments = [s for s in micro_filtered_shipments if s["status"] in micro_sb_status]
+    if micro_sb_priority:
+        micro_filtered_shipments = [s for s in micro_filtered_shipments if s["priority"] in micro_sb_priority]
+    if micro_sb_delivery:
+        micro_filtered_shipments = [s for s in micro_filtered_shipments if s["time_status"] in micro_sb_delivery]
 
     # Company Header
     st.markdown(f"""
@@ -1133,45 +1169,19 @@ with micro_tab:
 
     # ── Shipments Sub-Tab ──
     with shipments_tab:
-        # Inline filters for company shipments
-        fc1, fc2, fc3 = st.columns(3)
-        with fc1:
-            micro_status = st.multiselect(
-                "Status", ["Vessel En Route", "At Port", "In Transit", "Delivered"],
-                default=[], key="micro_filter_status",
-            )
-        with fc2:
-            micro_priority = st.multiselect(
-                "Priority", ["Critical", "High", "Standard"],
-                default=[], key="micro_filter_priority",
-            )
-        with fc3:
-            micro_delivery = st.multiselect(
-                "Delivery", ["On Time", "At Risk", "Delayed"],
-                default=[], key="micro_filter_delivery",
-            )
-
-        micro_filtered = comp_shipments
-        if micro_status:
-            micro_filtered = [s for s in micro_filtered if s["status"] in micro_status]
-        if micro_priority:
-            micro_filtered = [s for s in micro_filtered if s["priority"] in micro_priority]
-        if micro_delivery:
-            micro_filtered = [s for s in micro_filtered if s["time_status"] in micro_delivery]
-
         # Alert strip
-        render_alert_strip(micro_filtered)
+        render_alert_strip(micro_filtered_shipments)
 
         # Shipment Detail
-        if micro_filtered:
+        if micro_filtered_shipments:
             # Build driver column mapping
             driver_col = {}
-            for s in micro_filtered:
+            for s in micro_filtered_shipments:
                 drv = next((d for d in comp_drivers if d.get("assigned_shipment_id") == s["id"]), None)
                 driver_col[s["id"]] = {"Driver": drv["name"] if drv else "-"}
 
-            render_shipment_detail(micro_filtered, "micro")
-            render_shipments_table(micro_filtered, "micro", extra_cols=driver_col)
+            render_shipment_detail(micro_filtered_shipments, "micro")
+            render_shipments_table(micro_filtered_shipments, "micro", extra_cols=driver_col)
         else:
             st.markdown(
                 '<div class="panel" style="text-align:center;color:var(--text-2);padding:40px;">No shipments match the current filters.</div>',
