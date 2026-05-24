@@ -763,7 +763,7 @@ def render_map(ship_list, all_shipments, height=540, selected_id=None, map_key="
 # ══════════════════════════════════════════════════════════════════
 import base64, pathlib
 _logo_b64 = base64.b64encode(pathlib.Path("assets/logo.png").read_bytes()).decode()
-now_str = datetime.now().strftime("%b %d, %Y  %H:%M")
+refresh_str = st.session_state.last_refresh.strftime("%b %d, %Y  %H:%M")
 st.markdown(f"""
 <div class="top-bar">
     <div style="display:flex;align-items:center;gap:18px;">
@@ -775,7 +775,7 @@ st.markdown(f"""
     </div>
     <div class="top-bar-right">
         <div><span class="live-dot"></span><span class="live-label">Live</span></div>
-        <div class="top-bar-time">{now_str}</div>
+        <div class="top-bar-time">{refresh_str}</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -877,6 +877,10 @@ with st.sidebar:
         st.session_state.company_data = None
         st.session_state.last_refresh = datetime.now()
         st.rerun()
+    st.markdown(
+        '<div style="font-size:0.68rem;color:var(--text-2);margin-top:6px;">Data auto-refreshes every hour.</div>',
+        unsafe_allow_html=True,
+    )
 
 # ══════════════════════════════════════════════════════════════════
 # APPLY FILTERS (for Macro)
