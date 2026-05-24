@@ -69,12 +69,28 @@ st.markdown("""
 
     /* ── Streamlit Chrome Removal ── */
     .stApp { background: var(--bg-0) !important; font-family: 'Inter', -apple-system, sans-serif !important; }
-    header[data-testid="stHeader"] { background: transparent !important; }
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+        border: none !important;
+        height: auto !important;
+        min-height: 2.5rem !important;
+        pointer-events: auto !important;
+    }
     #MainMenu { display: none !important; }
     footer { display: none !important; }
     [data-testid="stToolbar"] { display: none !important; }
     [data-testid="stDecoration"] { display: none !important; }
     .stDeployButton { display: none !important; }
+    /* Keep sidebar collapse/expand button always visible */
+    button[data-testid="stSidebarCollapsedControl"],
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="collapsedControl"] {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        color: var(--text-0) !important;
+        z-index: 999 !important;
+    }
     .stApp > .main > .block-container {
         padding: 1.25rem 2rem 2rem 2rem !important;
         max-width: 100% !important;
