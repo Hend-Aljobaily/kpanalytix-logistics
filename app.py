@@ -69,7 +69,7 @@ st.markdown("""
 
     /* ── Streamlit Chrome Removal ── */
     .stApp { background: var(--bg-0) !important; font-family: 'Inter', -apple-system, sans-serif !important; }
-    header[data-testid="stHeader"] { display: none !important; }
+    header[data-testid="stHeader"] { background: transparent !important; }
     #MainMenu { display: none !important; }
     footer { display: none !important; }
     [data-testid="stToolbar"] { display: none !important; }
@@ -762,14 +762,19 @@ def render_map(ship_list, all_shipments, height=540, selected_id=None, map_key="
 
 
 # ══════════════════════════════════════════════════════════════════
-# TOP BAR
+# TOP BAR (with logo)
 # ══════════════════════════════════════════════════════════════════
+import base64, pathlib
+_logo_b64 = base64.b64encode(pathlib.Path("assets/logo.png").read_bytes()).decode()
 now_str = datetime.now().strftime("%b %d, %Y  %H:%M")
 st.markdown(f"""
 <div class="top-bar">
-    <div>
-        <div class="top-bar-title">Saudi Arabia & GCC Shipping Optimizer</div>
-        <div class="top-bar-sub">Government Operations Center &mdash; Automated Delivery Intelligence</div>
+    <div style="display:flex;align-items:center;gap:18px;">
+        <img src="data:image/png;base64,{_logo_b64}" style="height:30px;">
+        <div>
+            <div class="top-bar-title">Saudi Arabia & GCC Shipping Optimizer</div>
+            <div class="top-bar-sub">Government Operations Center &mdash; Automated Delivery Intelligence</div>
+        </div>
     </div>
     <div class="top-bar-right">
         <div><span class="live-dot"></span><span class="live-label">Live</span></div>
@@ -782,16 +787,6 @@ st.markdown(f"""
 # SIDEBAR
 # ══════════════════════════════════════════════════════════════════
 with st.sidebar:
-    # Logo (base64 embedded with padding so edges aren't clipped)
-    import base64, pathlib
-    _logo_b64 = base64.b64encode(pathlib.Path("assets/logo.png").read_bytes()).decode()
-    st.markdown(
-        f'<div style="padding: 10px 18px 6px 18px;">'
-        f'<img src="data:image/png;base64,{_logo_b64}" style="width:100%;">'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-
     # View selector
     view_mode = st.radio(
         "View",
