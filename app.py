@@ -973,16 +973,18 @@ else:
     comp_shipments = [s for s in shipments if s.get("company_id") == selected_company_id]
     comp_drivers = company_data["drivers"].get(selected_company_id, [])
     comp_trucks = company_data["trucks"].get(selected_company_id, [])
-    comp_summary = get_company_summary(selected_company_id, shipments, company_data["drivers"], company_data["trucks"])
 
     # Apply sidebar micro filters to company shipments
-    micro_filtered_shipments = comp_shipments
+    micro_filtered = comp_shipments
     if micro_sb_status:
-        micro_filtered_shipments = [s for s in micro_filtered_shipments if s["status"] in micro_sb_status]
+        micro_filtered = [s for s in micro_filtered if s["status"] in micro_sb_status]
     if micro_sb_priority:
-        micro_filtered_shipments = [s for s in micro_filtered_shipments if s["priority"] in micro_sb_priority]
+        micro_filtered = [s for s in micro_filtered if s["priority"] in micro_sb_priority]
     if micro_sb_delivery:
-        micro_filtered_shipments = [s for s in micro_filtered_shipments if s["time_status"] in micro_sb_delivery]
+        micro_filtered = [s for s in micro_filtered if s["time_status"] in micro_sb_delivery]
+
+    # Compute summary from filtered shipments
+    mf_summary = get_shipment_summary(micro_filtered)
 
     # Company Header
     st.markdown(f"""
@@ -1003,31 +1005,35 @@ else:
     # ── Overview Sub-Tab ──
     with overview_tab:
         # KPI Row 1
+        mf_on_time_pct = round(mf_summary["on_time"] / mf_summary["total"] * 100) if mf_summary["total"] else 0
+        active_drv = sum(1 for d in comp_drivers if d["status"] == "active")
+        fleet_in_use = sum(1 for t in comp_trucks if t["status"] == "in_use")
+        fleet_util = round(fleet_in_use / len(comp_trucks) * 100) if comp_trucks else 0
         st.markdown(f"""
         <div class="kpi-grid">
-            {kpi_html("Total Shipments", comp_summary["total_shipments"], "var(--text-0)", "&#9776;")}
-            {kpi_html("Active Drivers", comp_summary["active_drivers"], "var(--green)", "&#9823;")}
-            {kpi_html("Fleet Utilization", f'{comp_summary["fleet_utilization"]}%', "var(--accent)", "&#9951;")}
-            {kpi_html("On-Time Rate", f'{comp_summary["on_time_rate"]}%', "var(--green)", "&#10003;")}
-            {kpi_html("Avg Buffer", f'{comp_summary["avg_buffer_hrs"]}h', "var(--amber)" if comp_summary["avg_buffer_hrs"] < 4 else "var(--green)", "&#9201;")}
+            {kpi_html("Total Shipments", mf_summary["total"], "var(--text-0)", "&#9776;", f'{mf_summary["delivered"]} delivered')}
+            {kpi_html("Active Drivers", active_drv, "var(--green)", "&#9823;")}
+            {kpi_html("Fleet Utilization", f'{fleet_util}%', "var(--accent)", "&#9951;")}
+            {kpi_html("On-Time Rate", f'{mf_on_time_pct}%', "var(--green)", "&#10003;")}
+            {kpi_html("Avg Buffer", f'{mf_summary["avg_buffer_hrs"]}h', "var(--amber)" if mf_summary["avg_buffer_hrs"] < 4 else "var(--green)", "&#9201;")}
         </div>
         """, unsafe_allow_html=True)
 
         # KPI Row 2
         st.markdown(f"""
         <div class="kpi-grid">
-            {kpi_html("Cooled Fleet", comp_summary["cooled_trucks"], "var(--blue)", "&#10052;")}
-            {kpi_html("Regular Fleet", comp_summary["regular_trucks"], "var(--accent)", "&#9951;")}
-            {kpi_html("In Transit", comp_summary["in_transit"], "var(--accent)", "&#10132;")}
-            {kpi_html("At Port", comp_summary["at_port"], "var(--blue)", "&#9875;")}
-            {kpi_html("Delivered", comp_summary["delivered"], "var(--green)", "&#10003;")}
+            {kpi_html("Cooled Fleet", mf_summary["cooled"], "var(--blue)", "&#10052;")}
+            {kpi_html("Regular Fleet", mf_summary["regular"], "var(--accent)", "&#9951;")}
+            {kpi_html("In Transit", mf_summary["in_transit"], "var(--accent)", "&#10132;")}
+            {kpi_html("At Port", mf_summary["at_port"], "var(--blue)", "&#9875;")}
+            {kpi_html("Delivered", mf_summary["delivered"], "var(--green)", "&#10003;")}
         </div>
         """, unsafe_allow_html=True)
 
-        # Company Map
-        if comp_shipments:
+        # Company Map — show only filtered shipments
+        if micro_filtered:
             st.markdown('<div class="sec-title">Company Routes</div>', unsafe_allow_html=True)
-            render_map(comp_shipments, shipments, height=400, map_key="micro_overview_map")
+            render_map(micro_filtered, shipments, height=400, map_key="micro_overview_map")
 
         # Fleet Summary Table
         st.markdown('<div class="sec-title">Fleet Summary</div>', unsafe_allow_html=True)
@@ -1055,11 +1061,14 @@ else:
     # ── Drivers Sub-Tab ──
     with drivers_tab:
         # Driver Status KPIs
+        drv_active = sum(1 for d in comp_drivers if d["status"] == "active")
+        drv_idle = sum(1 for d in comp_drivers if d["status"] == "idle")
+        drv_off = sum(1 for d in comp_drivers if d["status"] == "off_duty")
         st.markdown(f"""
         <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr);">
-            {kpi_html("Active", comp_summary["active_drivers"], "var(--green)", "&#9823;", "Currently driving")}
-            {kpi_html("Idle", comp_summary["idle_drivers"], "var(--amber)", "&#9202;", "Awaiting assignment")}
-            {kpi_html("Off Duty", comp_summary["off_duty_drivers"], "var(--text-2)", "&#9790;", "Not on shift")}
+            {kpi_html("Active", drv_active, "var(--green)", "&#9823;", "Currently driving")}
+            {kpi_html("Idle", drv_idle, "var(--amber)", "&#9202;", "Awaiting assignment")}
+            {kpi_html("Off Duty", drv_off, "var(--text-2)", "&#9790;", "Not on shift")}
         </div>
         """, unsafe_allow_html=True)
 
@@ -1170,18 +1179,18 @@ else:
     # ── Shipments Sub-Tab ──
     with shipments_tab:
         # Alert strip
-        render_alert_strip(micro_filtered_shipments)
+        render_alert_strip(micro_filtered)
 
         # Shipment Detail
-        if micro_filtered_shipments:
+        if micro_filtered:
             # Build driver column mapping
             driver_col = {}
-            for s in micro_filtered_shipments:
+            for s in micro_filtered:
                 drv = next((d for d in comp_drivers if d.get("assigned_shipment_id") == s["id"]), None)
                 driver_col[s["id"]] = {"Driver": drv["name"] if drv else "-"}
 
-            render_shipment_detail(micro_filtered_shipments, "micro")
-            render_shipments_table(micro_filtered_shipments, "micro", extra_cols=driver_col)
+            render_shipment_detail(micro_filtered, "micro")
+            render_shipments_table(micro_filtered, "micro", extra_cols=driver_col)
         else:
             st.markdown(
                 '<div class="panel" style="text-align:center;color:var(--text-2);padding:40px;">No shipments match the current filters.</div>',
