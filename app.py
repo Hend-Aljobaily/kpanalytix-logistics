@@ -6,7 +6,14 @@ Automated Government Operations Center — Live Shipment Intelligence.
 import streamlit as st
 import pandas as pd
 import folium
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+# Saudi Arabia timezone (UTC+3)
+_TZ_SA = timezone(timedelta(hours=3))
+
+def _now():
+    """Current time in Saudi Arabia timezone."""
+    return datetime.now(_TZ_SA)
 from streamlit_folium import st_folium
 from streamlit_autorefresh import st_autorefresh
 
@@ -483,7 +490,7 @@ st.markdown("""
 if "shipments" not in st.session_state:
     st.session_state.shipments = generate_shipments(15)
 if "last_refresh" not in st.session_state:
-    st.session_state.last_refresh = datetime.now()
+    st.session_state.last_refresh = _now()
 if "selected_shipment_id" not in st.session_state:
     st.session_state.selected_shipment_id = None
 if "company_data" not in st.session_state:
@@ -491,10 +498,10 @@ if "company_data" not in st.session_state:
 if "view_mode" not in st.session_state:
     st.session_state.view_mode = "Macro"
 
-if (datetime.now() - st.session_state.last_refresh).seconds > 3600:
+if (_now() - st.session_state.last_refresh).seconds > 3600:
     st.session_state.shipments = generate_shipments(15)
     st.session_state.company_data = None
-    st.session_state.last_refresh = datetime.now()
+    st.session_state.last_refresh = _now()
 
 shipments = st.session_state.shipments
 summary = get_shipment_summary(shipments)
@@ -875,7 +882,7 @@ with st.sidebar:
     if st.button("Refresh Data", type="primary", use_container_width=True):
         st.session_state.shipments = generate_shipments(15)
         st.session_state.company_data = None
-        st.session_state.last_refresh = datetime.now()
+        st.session_state.last_refresh = _now()
         st.rerun()
     st.markdown(
         '<div style="font-size:0.68rem;color:var(--text-2);margin-top:6px;">Data auto-refreshes every hour.</div>',
