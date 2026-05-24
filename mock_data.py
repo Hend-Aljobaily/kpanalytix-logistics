@@ -116,6 +116,7 @@ def generate_shipments(count=15):
 
         shipments.append({
             "id": f"SHP-{2026}{(i + 1):04d}",
+            "company_id": None,
             "vessel": vessel,
             "port": port,
             "destination": dest,
