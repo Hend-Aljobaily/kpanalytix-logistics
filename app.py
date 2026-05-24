@@ -782,9 +782,15 @@ st.markdown(f"""
 # SIDEBAR
 # ══════════════════════════════════════════════════════════════════
 with st.sidebar:
-    # Logo
-    st.image("assets/logo.png", use_container_width=True)
-    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+    # Logo (base64 embedded with padding so edges aren't clipped)
+    import base64, pathlib
+    _logo_b64 = base64.b64encode(pathlib.Path("assets/logo.png").read_bytes()).decode()
+    st.markdown(
+        f'<div style="padding: 10px 18px 6px 18px;">'
+        f'<img src="data:image/png;base64,{_logo_b64}" style="width:100%;">'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
     # View selector
     view_mode = st.radio(
