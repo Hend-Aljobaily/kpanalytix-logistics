@@ -70,6 +70,16 @@ GCC_CITIES = {
 
 ALL_DESTINATIONS = {**SAUDI_CITIES, **GCC_CITIES}
 
+# ── Country → City Mapping ──
+DEST_COUNTRY_MAP = {}
+for _city in SAUDI_CITIES:
+    DEST_COUNTRY_MAP[_city] = "Saudi Arabia"
+for _city in GCC_CITIES:
+    _parts = _city.rsplit(", ", 1)
+    DEST_COUNTRY_MAP[_city] = _parts[1] if len(_parts) == 2 else "Other"
+
+DEST_COUNTRIES = sorted(set(DEST_COUNTRY_MAP.values()))
+
 # ── OSRM API ──
 OSRM_BASE_URL = "https://router.project-osrm.org"
 
