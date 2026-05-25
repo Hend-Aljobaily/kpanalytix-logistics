@@ -899,10 +899,12 @@ with st.sidebar:
 
     # ── Macro Filters ──
     filter_ports = []
+    filter_dest = []
     filter_status = []
     filter_priority = []
     filter_delivery = []
     micro_sb_company = None
+    micro_sb_dest = []
     micro_sb_status = []
     micro_sb_priority = []
     micro_sb_delivery = []
@@ -916,6 +918,7 @@ with st.sidebar:
         """, unsafe_allow_html=True)
 
         filter_ports = st.multiselect("Port", list(PORTS.keys()), default=[], key="macro_port")
+        filter_dest = st.multiselect("Destination", sorted(ALL_DESTINATIONS.keys()), default=[], key="macro_dest")
         filter_status = st.multiselect("Status", ["Vessel En Route", "At Port", "In Transit", "Delivered"], default=[], key="macro_status")
         filter_priority = st.multiselect("Priority", ["Critical", "High", "Standard"], default=[], key="macro_priority")
         filter_delivery = st.multiselect("Delivery Status", ["On Time", "At Risk", "Delayed"], default=[], key="macro_delivery")
@@ -964,6 +967,7 @@ with st.sidebar:
             format_func=lambda x: company_names_sb[x],
             key="micro_sb_company",
         )
+        micro_sb_dest = st.multiselect("Destination", sorted(ALL_DESTINATIONS.keys()), default=[], key="micro_sb_dest")
         micro_sb_status = st.multiselect("Status", ["Vessel En Route", "At Port", "In Transit", "Delivered"], default=[], key="micro_sb_status")
         micro_sb_priority = st.multiselect("Priority", ["Critical", "High", "Standard"], default=[], key="micro_sb_priority")
         micro_sb_delivery = st.multiselect("Delivery Status", ["On Time", "At Risk", "Delayed"], default=[], key="micro_sb_delivery")
@@ -990,6 +994,8 @@ with st.sidebar:
 filtered = shipments
 if filter_ports:
     filtered = [s for s in filtered if s["port"] in filter_ports]
+if filter_dest:
+    filtered = [s for s in filtered if s["destination"] in filter_dest]
 if filter_status:
     filtered = [s for s in filtered if s["status"] in filter_status]
 if filter_priority:
@@ -1082,6 +1088,8 @@ else:
 
     # Apply sidebar micro filters to company shipments
     micro_filtered = comp_shipments
+    if micro_sb_dest:
+        micro_filtered = [s for s in micro_filtered if s["destination"] in micro_sb_dest]
     if micro_sb_status:
         micro_filtered = [s for s in micro_filtered if s["status"] in micro_sb_status]
     if micro_sb_priority:
