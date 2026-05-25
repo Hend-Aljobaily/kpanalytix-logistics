@@ -27,9 +27,13 @@ from map_utils import (
     add_vessel_markers,
     fit_map_bounds,
     simulate_truck_position,
+    add_hotspot_markers,
+    add_incident_marker,
+    add_alternate_route,
 )
 from mock_data import generate_shipments, get_shipment_summary, get_port_summary
 from company_data import generate_company_data, get_company_summary, COMPANIES
+from delay_analytics_data import generate_analytics_data
 
 # ── Page Config ──
 st.set_page_config(
@@ -481,6 +485,89 @@ st.markdown("""
         color: var(--text-2);
         margin-bottom: 10px;
     }
+
+    /* ── Analytics: Cause Card ── */
+    .cause-card {
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 14px 16px;
+        margin-bottom: 8px;
+        border-left: 3px solid var(--amber);
+    }
+    .cause-card.severe { border-left-color: var(--red); }
+    .cause-card.moderate { border-left-color: var(--amber); }
+    .cause-card.minor { border-left-color: var(--blue); }
+    .cause-card .cc-cause {
+        font-size: 0.82rem; font-weight: 700; color: var(--text-0); margin-bottom: 4px;
+    }
+    .cause-card .cc-desc {
+        font-size: 0.78rem; color: var(--text-1); margin-bottom: 4px;
+    }
+    .cause-card .cc-meta {
+        font-size: 0.72rem; color: var(--text-2);
+    }
+
+    /* ── Analytics: Trip Row ── */
+    .trip-row {
+        display: grid;
+        grid-template-columns: 90px 1fr 80px 80px 80px 65px 80px 1fr;
+        gap: 8px;
+        padding: 8px 12px;
+        font-size: 0.78rem;
+        border-bottom: 1px solid var(--border);
+        align-items: center;
+    }
+    .trip-row:hover { background: rgba(255,255,255,0.02); }
+    .trip-row.header {
+        font-size: 0.68rem; font-weight: 600; text-transform: uppercase;
+        letter-spacing: 0.5px; color: var(--text-2); border-bottom: 1px solid var(--border);
+    }
+    .trip-row .trip-val { color: var(--text-0); font-variant-numeric: tabular-nums; }
+    .trip-row .trip-delayed { color: var(--red); }
+    .trip-row .trip-ontime { color: var(--green); }
+
+    /* ── Analytics: Hotspot Badge ── */
+    .hotspot-badge {
+        display: inline-block; padding: 2px 8px; border-radius: 10px;
+        font-size: 0.72rem; font-weight: 600;
+    }
+    .hotspot-badge.high { background: var(--red-dim); color: var(--red); }
+    .hotspot-badge.medium { background: var(--amber-dim); color: var(--amber); }
+    .hotspot-badge.low { background: var(--blue-dim); color: var(--blue); }
+
+    /* ── Analytics: Incident Card ── */
+    .incident-card {
+        background: var(--bg-1);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 18px 22px;
+        margin-bottom: 14px;
+        border-left: 4px solid var(--red);
+    }
+    .incident-card .ic-type {
+        font-size: 0.9rem; font-weight: 700; color: var(--red); margin-bottom: 4px;
+    }
+    .incident-card .ic-desc {
+        font-size: 0.82rem; color: var(--text-1); margin-bottom: 10px;
+    }
+
+    /* ── Analytics: Pattern Alert ── */
+    .pattern-alert {
+        padding: 10px 14px;
+        border-radius: var(--radius);
+        font-size: 0.82rem;
+        margin-bottom: 8px;
+        font-weight: 500;
+        background: var(--amber-dim);
+        border: 1px solid rgba(245,158,11,0.2);
+        color: #fcd34d;
+    }
+    .pattern-alert.info {
+        background: var(--blue-dim);
+        border-color: rgba(59,130,246,0.2);
+        color: #93c5fd;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -495,12 +582,15 @@ if "selected_shipment_id" not in st.session_state:
     st.session_state.selected_shipment_id = None
 if "company_data" not in st.session_state:
     st.session_state.company_data = None
+if "analytics_data" not in st.session_state:
+    st.session_state.analytics_data = None
 if "view_mode" not in st.session_state:
     st.session_state.view_mode = "Macro"
 
 if (_now() - st.session_state.last_refresh).seconds > 3600:
     st.session_state.shipments = generate_shipments(15)
     st.session_state.company_data = None
+    st.session_state.analytics_data = None
     st.session_state.last_refresh = _now()
 
 shipments = st.session_state.shipments
@@ -510,6 +600,10 @@ summary = get_shipment_summary(shipments)
 if st.session_state.company_data is None:
     st.session_state.company_data = generate_company_data(shipments)
 company_data = st.session_state.company_data
+
+if st.session_state.analytics_data is None:
+    st.session_state.analytics_data = generate_analytics_data(shipments, company_data)
+analytics_data = st.session_state.analytics_data
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -882,6 +976,7 @@ with st.sidebar:
     if st.button("Refresh Data", type="primary", use_container_width=True):
         st.session_state.shipments = generate_shipments(15)
         st.session_state.company_data = None
+        st.session_state.analytics_data = None
         st.session_state.last_refresh = _now()
         st.rerun()
     st.markdown(
@@ -1011,7 +1106,7 @@ else:
     """, unsafe_allow_html=True)
 
     # Sub-tabs
-    overview_tab, drivers_tab, shipments_tab = st.tabs(["Overview", "Drivers", "Shipments"])
+    overview_tab, drivers_tab, shipments_tab, analytics_tab = st.tabs(["Overview", "Drivers", "Shipments", "Analytics"])
 
     # ── Overview Sub-Tab ──
     with overview_tab:
@@ -1205,5 +1300,369 @@ else:
         else:
             st.markdown(
                 '<div class="panel" style="text-align:center;color:var(--text-2);padding:40px;">No shipments match the current filters.</div>',
+                unsafe_allow_html=True,
+            )
+
+    # ── Analytics Sub-Tab ──
+    with analytics_tab:
+        from collections import Counter
+
+        a_delay_causes = analytics_data["delay_causes"]
+        a_driver_history = analytics_data["driver_history"]
+        a_hotspots = analytics_data["location_hotspots"].get(selected_company_id, [])
+        a_incidents = analytics_data["active_incidents"].get(selected_company_id, [])
+
+        # ════════════════════════════════════════════════════════════
+        # Section 1: Root Cause Analysis
+        # ════════════════════════════════════════════════════════════
+        st.markdown('<div class="sec-title">Root Cause Analysis</div>', unsafe_allow_html=True)
+
+        delayed_shipments = [s for s in comp_shipments if s["time_status"] in ("Delayed", "At Risk")]
+
+        if delayed_shipments:
+            # Summary bar chart of cause categories
+            all_causes_flat = []
+            for s in delayed_shipments:
+                causes = a_delay_causes.get(s["id"], [])
+                all_causes_flat.extend(causes)
+
+            if all_causes_flat:
+                cause_counts = Counter(c["cause"] for c in all_causes_flat)
+                sorted_causes = cause_counts.most_common()
+
+                # Horizontal bar chart via HTML
+                max_count = max(cause_counts.values()) if cause_counts else 1
+                bars_html = ""
+                bar_colors = {
+                    "Port Congestion": "var(--blue)", "Customs Clearance": "var(--accent)",
+                    "Driver Break": "var(--amber)", "Road Congestion": "var(--red)",
+                    "Weather": "#f59e0b", "Mechanical Issue": "var(--red)",
+                    "Checkpoint Delay": "var(--amber)", "Loading Delay": "var(--blue)",
+                }
+                for cause_name, count in sorted_causes:
+                    pct = count / max_count * 100
+                    color = bar_colors.get(cause_name, "var(--accent)")
+                    bars_html += (
+                        f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">'
+                        f'<div style="width:140px;font-size:0.78rem;color:var(--text-1);text-align:right;">{cause_name}</div>'
+                        f'<div style="flex:1;background:var(--bg-2);border-radius:4px;height:20px;overflow:hidden;">'
+                        f'<div style="width:{pct}%;height:100%;background:{color};border-radius:4px;"></div></div>'
+                        f'<div style="width:30px;font-size:0.78rem;color:var(--text-0);font-weight:600;">{count}</div>'
+                        f'</div>'
+                    )
+                st.markdown(f'<div class="panel">{bars_html}</div>', unsafe_allow_html=True)
+
+            # Per-shipment cause cards
+            for s in delayed_shipments:
+                causes = a_delay_causes.get(s["id"], [])
+                if not causes:
+                    continue
+
+                ts_pill = "pill-red" if s["time_status"] == "Delayed" else "pill-amber"
+                port_short = s["port"].split("(")[0].strip()
+                total_delay = sum(c["delay_hrs"] for c in causes)
+
+                st.markdown(f"""
+                <div class="panel" style="margin-bottom:10px;">
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                        <span style="font-weight:700;color:var(--text-0);">{s["id"]}</span>
+                        <span class="pill {ts_pill}">{s["time_status"]}</span>
+                        <span style="font-size:0.78rem;color:var(--text-2);">{port_short} &rarr; {s["destination"]}</span>
+                        <span style="margin-left:auto;font-size:0.78rem;color:var(--red);font-weight:600;">Total: +{total_delay:.1f}h</span>
+                    </div>
+                """, unsafe_allow_html=True)
+
+                for c in causes:
+                    severity = "severe" if c["delay_hrs"] >= 3 else ("moderate" if c["delay_hrs"] >= 1.5 else "minor")
+                    st.markdown(f"""
+                    <div class="cause-card {severity}">
+                        <div class="cc-cause">{c["cause"]} <span style="color:var(--red);font-size:0.78rem;">+{c["delay_hrs"]}h</span></div>
+                        <div class="cc-desc">{c["description"]}</div>
+                        <div class="cc-meta">{c["location"]} &bull; {c["timestamp"].strftime("%H:%M")}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(
+                '<div class="panel" style="text-align:center;color:var(--green);padding:30px;">'
+                '&#10003; All shipments on schedule &mdash; no delay causes to report.</div>',
+                unsafe_allow_html=True,
+            )
+
+        # ════════════════════════════════════════════════════════════
+        # Section 2: Driver Patterns
+        # ════════════════════════════════════════════════════════════
+        st.markdown('<div class="sec-title">Driver Patterns</div>', unsafe_allow_html=True)
+
+        analytics_driver_options = {d["id"]: d["name"] for d in comp_drivers}
+        analytics_sel_driver_id = st.selectbox(
+            "Select driver to analyze",
+            options=list(analytics_driver_options.keys()),
+            format_func=lambda x: analytics_driver_options[x],
+            key="analytics_driver_selector",
+        )
+        sel_drv = next(d for d in comp_drivers if d["id"] == analytics_sel_driver_id)
+        trips = a_driver_history.get(analytics_sel_driver_id, [])
+
+        if trips:
+            # Driver summary KPIs
+            total_trips = len(trips)
+            on_time_trips = sum(1 for t in trips if t["on_time"])
+            ot_pct = round(on_time_trips / total_trips * 100, 1) if total_trips else 0
+            delayed_trips = [t for t in trips if not t["on_time"]]
+            avg_delay = round(sum(t["delay_hrs"] for t in delayed_trips) / len(delayed_trips), 1) if delayed_trips else 0
+
+            # Most common cause
+            delay_reasons = [t["delay_reason"] for t in delayed_trips if t["delay_reason"]]
+            most_common_cause = Counter(delay_reasons).most_common(1)[0][0] if delay_reasons else "N/A"
+
+            st.markdown(f"""
+            <div class="detail-grid" style="grid-template-columns: repeat(4, 1fr);">
+                <div class="detail-card">
+                    <div class="dc-label">Total Trips</div>
+                    <div class="dc-value">{total_trips}</div>
+                </div>
+                <div class="detail-card">
+                    <div class="dc-label">On-Time Rate</div>
+                    <div class="dc-value" style="color:{"var(--green)" if ot_pct >= 85 else "var(--red)"};">{ot_pct}%</div>
+                </div>
+                <div class="detail-card">
+                    <div class="dc-label">Avg Delay</div>
+                    <div class="dc-value" style="color:var(--amber);">{avg_delay}h</div>
+                </div>
+                <div class="detail-card">
+                    <div class="dc-label">Top Cause</div>
+                    <div class="dc-value" style="font-size:0.85rem;">{most_common_cause}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Pattern detection
+            if delayed_trips:
+                route_delays = Counter(t["route_name"] for t in delayed_trips)
+                reason_delays = Counter(t["delay_reason"] for t in delayed_trips if t["delay_reason"])
+
+                # Company avg on-time rate
+                all_drv_ot = [d["stats"]["on_time_pct"] for d in comp_drivers]
+                company_avg_ot = sum(all_drv_ot) / len(all_drv_ot) if all_drv_ot else 90
+
+                patterns_html = ""
+                for route_name, cnt in route_delays.most_common(2):
+                    if cnt >= 3:
+                        patterns_html += (
+                            f'<div class="pattern-alert">'
+                            f'&#9888; This driver has <b>{cnt} delays</b> on the <b>{route_name}</b> route'
+                            f'</div>'
+                        )
+                for reason, cnt in reason_delays.most_common(2):
+                    if cnt >= 3:
+                        pct = round(cnt / len(delayed_trips) * 100)
+                        patterns_html += (
+                            f'<div class="pattern-alert">'
+                            f'&#9888; <b>{reason}</b> accounts for <b>{pct}%</b> of this driver\'s delays ({cnt} occurrences)'
+                            f'</div>'
+                        )
+                if ot_pct < company_avg_ot - 5:
+                    diff = round(company_avg_ot - ot_pct, 1)
+                    patterns_html += (
+                        f'<div class="pattern-alert info">'
+                        f'&#8505; Driver performs <b>{diff}%</b> below company average on-time rate ({company_avg_ot:.1f}%)'
+                        f'</div>'
+                    )
+                if patterns_html:
+                    st.markdown(patterns_html, unsafe_allow_html=True)
+
+            # Trip history table
+            st.markdown(
+                '<div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;'
+                'color:var(--text-2);margin:14px 0 8px 0;">Trip History (Last 30 Trips)</div>',
+                unsafe_allow_html=True,
+            )
+
+            trip_rows = []
+            for t in trips:
+                trip_rows.append({
+                    "Date": t["date"].strftime("%b %d"),
+                    "Route": t["route_name"],
+                    "Cargo": t["cargo"],
+                    "Distance": f'{t["distance_km"]} km',
+                    "Expected": f'{t["expected_hrs"]}h',
+                    "Actual": f'{t["actual_hrs"]}h',
+                    "Delay": f'+{t["delay_hrs"]}h' if t["delay_hrs"] > 0 else "-",
+                    "Status": "On Time" if t["on_time"] else "Delayed",
+                    "Reason": t["delay_reason"] or "-",
+                })
+            trip_df = pd.DataFrame(trip_rows)
+
+            def _style_trip_status(val):
+                if val == "On Time":
+                    return "color: #86efac; background: rgba(34,197,94,0.12); border-radius: 4px; padding: 2px 8px; font-weight: 600;"
+                if val == "Delayed":
+                    return "color: #fca5a5; background: rgba(239,68,68,0.12); border-radius: 4px; padding: 2px 8px; font-weight: 600;"
+                return ""
+
+            styled_trips = trip_df.style.map(_style_trip_status, subset=["Status"])
+            st.dataframe(styled_trips, use_container_width=True, hide_index=True, height=400, key="analytics_trips_table")
+        else:
+            st.markdown(
+                '<div class="panel" style="text-align:center;color:var(--text-2);padding:30px;">'
+                'No trip history available for this driver.</div>',
+                unsafe_allow_html=True,
+            )
+
+        # ════════════════════════════════════════════════════════════
+        # Section 3: Location Hotspots
+        # ════════════════════════════════════════════════════════════
+        st.markdown('<div class="sec-title">Location Hotspots</div>', unsafe_allow_html=True)
+
+        if a_hotspots:
+            # Hotspot map
+            hs_map = create_base_map()
+            add_hotspot_markers(hs_map, a_hotspots)
+            # Fit to hotspot bounds
+            hs_coords = [[h["lat"], h["lon"]] for h in a_hotspots]
+            if len(hs_coords) >= 2:
+                fit_map_bounds(hs_map, hs_coords)
+            elif hs_coords:
+                hs_map.location = hs_coords[0]
+                hs_map.zoom_start = 7
+            st_folium(hs_map, use_container_width=True, height=400, returned_objects=[], key="analytics_hotspot_map")
+
+            # Hotspot table
+            hs_rows = []
+            for idx, h in enumerate(a_hotspots):
+                severity_score = h["avg_delay_hrs"] * h["frequency"]
+                if severity_score > 20:
+                    badge_cls = "high"
+                    badge_label = "High"
+                elif severity_score > 10:
+                    badge_cls = "medium"
+                    badge_label = "Medium"
+                else:
+                    badge_cls = "low"
+                    badge_label = "Low"
+
+                highlight = ' style="background:rgba(239,68,68,0.05);"' if idx < 3 else ""
+                hs_rows.append({
+                    "Location": h["name"],
+                    "Type": h["type"].replace("_", " ").title(),
+                    "Avg Delay": f'{h["avg_delay_hrs"]}h',
+                    "Frequency": h["frequency"],
+                    "Impact": badge_label,
+                    "Description": h["description"],
+                })
+            hs_df = pd.DataFrame(hs_rows)
+
+            def _style_impact(val):
+                if val == "High":
+                    return "color: #fca5a5; background: rgba(239,68,68,0.12); border-radius: 4px; padding: 2px 8px; font-weight: 600;"
+                if val == "Medium":
+                    return "color: #fcd34d; background: rgba(245,158,11,0.12); border-radius: 4px; padding: 2px 8px; font-weight: 600;"
+                return "color: #93c5fd; background: rgba(59,130,246,0.12); border-radius: 4px; padding: 2px 8px; font-weight: 600;"
+
+            styled_hs = hs_df.style.map(_style_impact, subset=["Impact"])
+            st.dataframe(styled_hs, use_container_width=True, hide_index=True, key="analytics_hotspot_table")
+        else:
+            st.markdown(
+                '<div class="panel" style="text-align:center;color:var(--text-2);padding:30px;">'
+                'No hotspot data available for this company.</div>',
+                unsafe_allow_html=True,
+            )
+
+        # ════════════════════════════════════════════════════════════
+        # Section 4: Route Optimization
+        # ════════════════════════════════════════════════════════════
+        st.markdown('<div class="sec-title">Route Optimization</div>', unsafe_allow_html=True)
+
+        if a_incidents:
+            for inc_idx, inc in enumerate(a_incidents):
+                inc_type_label = inc["incident_type"].replace("_", " ").title()
+                time_label = f'{abs(inc["time_diff_hrs"])}h'
+                if inc["time_diff_hrs"] < 0:
+                    time_info = f'<span style="color:var(--green);font-weight:600;">Saves {time_label}</span>'
+                else:
+                    time_info = f'<span style="color:var(--amber);font-weight:600;">Adds {time_label}</span>'
+
+                st.markdown(f"""
+                <div class="incident-card">
+                    <div class="ic-type">&#9888; {inc_type_label}</div>
+                    <div class="ic-desc">{inc["description"]}</div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                        <span class="pill pill-red">{inc["shipment_id"]}</span>
+                        <span style="font-size:0.78rem;color:var(--text-2);">
+                            Reported at {inc["reported_at"].strftime("%H:%M")}
+                        </span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Route comparison
+                col1, col2 = st.columns(2)
+                with col1:
+                    orig_h = int(inc["original_duration_hrs"])
+                    orig_m = int((inc["original_duration_hrs"] % 1) * 60)
+                    st.markdown(f"""
+                    <div class="panel" style="border-left:3px solid var(--red);">
+                        <div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;color:var(--text-2);margin-bottom:10px;">
+                            Original Route (Blocked)
+                        </div>
+                        <div class="detail-grid" style="grid-template-columns: 1fr 1fr;">
+                            <div class="detail-card">
+                                <div class="dc-label">Distance</div>
+                                <div class="dc-value" style="font-size:1rem;">{inc["original_distance_km"]} km</div>
+                            </div>
+                            <div class="detail-card">
+                                <div class="dc-label">Duration</div>
+                                <div class="dc-value" style="font-size:1rem;">{orig_h}h {orig_m}m</div>
+                            </div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col2:
+                    alt_h = int(inc["alternate_duration_hrs"])
+                    alt_m = int((inc["alternate_duration_hrs"] % 1) * 60)
+                    st.markdown(f"""
+                    <div class="panel" style="border-left:3px solid var(--green);">
+                        <div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;color:var(--text-2);margin-bottom:10px;">
+                            Alternate Route {time_info}
+                        </div>
+                        <div class="detail-grid" style="grid-template-columns: 1fr 1fr;">
+                            <div class="detail-card">
+                                <div class="dc-label">Distance</div>
+                                <div class="dc-value" style="font-size:1rem;">{inc["alternate_distance_km"]} km</div>
+                            </div>
+                            <div class="detail-card">
+                                <div class="dc-label">Duration</div>
+                                <div class="dc-value" style="font-size:1rem;">{alt_h}h {alt_m}m</div>
+                            </div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                # Map showing both routes
+                inc_map = create_base_map()
+                add_alternate_route(inc_map, inc["original_route"], inc["alternate_route"])
+                add_incident_marker(inc_map, inc)
+
+                # Fit bounds to both routes
+                all_pts = inc["original_route"] + inc["alternate_route"]
+                if len(all_pts) >= 2:
+                    fit_map_bounds(inc_map, all_pts)
+                st_folium(inc_map, use_container_width=True, height=380, returned_objects=[], key=f"analytics_incident_map_{inc_idx}")
+
+                # Mock reroute action
+                drv_for_ship = next((d for d in comp_drivers if d.get("assigned_shipment_id") == inc["shipment_id"]), None)
+                drv_name = drv_for_ship["name"] if drv_for_ship else "driver"
+                st.markdown(f"""
+                <div class="recovery ok" style="margin-bottom:20px;">
+                    <b>&#10003; Route Optimization Available:</b> Reroute recommendation sent to <b>{drv_name}</b>.
+                    Alternate route via detour avoids {inc_type_label.lower()} zone.
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown(
+                '<div class="panel" style="text-align:center;color:var(--green);padding:30px;">'
+                '&#10003; No active incidents &mdash; all routes are clear.</div>',
                 unsafe_allow_html=True,
             )

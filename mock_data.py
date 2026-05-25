@@ -142,9 +142,80 @@ def generate_shipments(count=15):
             },
         })
 
+    # ── Guarantee minimum delayed / at-risk shipments for analytics ──
+    _ensure_status_mix(shipments, now)
+
     priority_order = {"Critical": 0, "High": 1, "Standard": 2}
     shipments.sort(key=lambda s: (priority_order[s["priority"]], s["deadline"]))
     return shipments
+
+
+def _ensure_status_mix(shipments, now):
+    """Ensure at least 3 delayed and 3 at-risk shipments by tightening deadlines."""
+    min_delayed = 3
+    min_at_risk = 3
+
+    delayed = [s for s in shipments if s["time_status"] == "Delayed"]
+    at_risk = [s for s in shipments if s["time_status"] == "At Risk"]
+    on_time = [s for s in shipments if s["time_status"] == "On Time" and s["status"] != "Delivered"]
+
+    need_delayed = max(0, min_delayed - len(delayed))
+    need_at_risk = max(0, min_at_risk - len(at_risk))
+
+    # Convert some on-time shipments to delayed
+    for s in on_time[:need_delayed]:
+        _force_time_status(s, "Delayed", now)
+    remaining_on_time = on_time[need_delayed:]
+
+    # Convert some on-time shipments to at-risk
+    for s in remaining_on_time[:need_at_risk]:
+        _force_time_status(s, "At Risk", now)
+
+
+def _force_time_status(s, target_status, now):
+    """Adjust a shipment's deadline to force a specific time_status."""
+    if target_status == "Delayed":
+        # Set deadline before ETA so buffer is negative
+        offset_hrs = random.uniform(1.0, 4.0)
+        s["deadline"] = s["truck_eta"] - timedelta(hours=offset_hrs)
+    elif target_status == "At Risk":
+        # Set deadline just after ETA so buffer is 0-4h
+        offset_hrs = random.uniform(0.5, 3.5)
+        s["deadline"] = s["truck_eta"] + timedelta(hours=offset_hrs)
+
+    buffer_hrs = (s["deadline"] - s["truck_eta"]).total_seconds() / 3600
+    s["time_status"] = target_status
+    s["recommendation"]["buffer_hrs"] = round(buffer_hrs, 1)
+
+    # Recalculate dispatch verdict & recovery action
+    drive_hrs = s["route"]["duration_hrs"]
+    optimal_dispatch = s["deadline"] - timedelta(hours=drive_hrs + 2)
+    latest_dispatch = s["deadline"] - timedelta(hours=drive_hrs)
+    actual_vs_optimal = (optimal_dispatch - s["truck_dispatch"]).total_seconds() / 3600
+
+    if abs(actual_vs_optimal) <= 1:
+        dispatch_verdict = "Optimal"
+    elif actual_vs_optimal > 1:
+        dispatch_verdict = "Early"
+    elif actual_vs_optimal > -3:
+        dispatch_verdict = "Late"
+    else:
+        dispatch_verdict = "Critical"
+
+    s["recommendation"]["optimal_dispatch"] = optimal_dispatch
+    s["recommendation"]["latest_dispatch"] = latest_dispatch
+    s["recommendation"]["dispatch_verdict"] = dispatch_verdict
+
+    if target_status == "Delayed":
+        s["recommendation"]["recovery_action"] = (
+            f"EXPEDITE: {abs(buffer_hrs):.1f}h behind schedule. "
+            "Reroute to shortest path, authorize priority lane access."
+        )
+    elif target_status == "At Risk":
+        s["recommendation"]["recovery_action"] = (
+            f"MONITOR: Only {buffer_hrs:.1f}h buffer remaining. "
+            "Avoid unscheduled stops, prepare contingency."
+        )
 
 
 def get_shipment_summary(shipments):

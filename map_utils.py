@@ -304,3 +304,108 @@ def fit_map_bounds(m, coords):
         lats = [c[0] for c in coords]
         lons = [c[1] for c in coords]
         m.fit_bounds([[min(lats), min(lons)], [max(lats), max(lons)]])
+
+
+# ══════════════════════════════════════════════════════════════
+# ANALYTICS MAP HELPERS
+# ══════════════════════════════════════════════════════════════
+
+def add_incident_marker(m, incident):
+    """Add a red pulsing marker at an incident location."""
+    loc = incident["location"]
+    inc_type = incident["incident_type"].replace("_", " ").title()
+    popup_html = (
+        '<div style="font-family:Arial;min-width:220px;background:#1A1527;color:#F0ECF5;'
+        'padding:10px;border-radius:8px;">'
+        f'<b style="color:#ef4444;font-size:13px;">&#9888; {inc_type}</b>'
+        '<hr style="margin:5px 0;border-color:#2E2545;">'
+        f'<b>Shipment:</b> {incident["shipment_id"]}<br>'
+        f'<b>Route:</b> {incident["port"].split("(")[0].strip()} &rarr; {incident["destination"]}<br>'
+        f'<b>Details:</b> {incident["description"]}<br>'
+        f'<b>Reported:</b> {incident["reported_at"].strftime("%H:%M")}'
+        '</div>'
+    )
+    # Pulsing red circle
+    folium.CircleMarker(
+        location=[loc["lat"], loc["lon"]],
+        radius=12,
+        color="#ef4444",
+        fill=True,
+        fill_color="#ef4444",
+        fill_opacity=0.6,
+        weight=3,
+        popup=folium.Popup(popup_html, max_width=300),
+        tooltip=f"Incident: {inc_type}",
+    ).add_to(m)
+    # Inner dot
+    folium.CircleMarker(
+        location=[loc["lat"], loc["lon"]],
+        radius=5,
+        color="#ffffff",
+        fill=True,
+        fill_color="#ef4444",
+        fill_opacity=1.0,
+        weight=1,
+    ).add_to(m)
+
+
+def add_alternate_route(m, original_waypoints, alternate_waypoints):
+    """Draw original route as dashed red and alternate as solid green."""
+    # Original route — red dashed (blocked)
+    if original_waypoints and len(original_waypoints) >= 2:
+        folium.PolyLine(
+            locations=original_waypoints,
+            color="#ef4444",
+            weight=4,
+            opacity=0.7,
+            dash_array="10 8",
+            tooltip="Original Route (blocked)",
+        ).add_to(m)
+    # Alternate route — green solid
+    if alternate_waypoints and len(alternate_waypoints) >= 2:
+        folium.PolyLine(
+            locations=alternate_waypoints,
+            color="#22c55e",
+            weight=4,
+            opacity=0.9,
+            tooltip="Alternate Route",
+        ).add_to(m)
+
+
+def add_hotspot_markers(m, hotspots):
+    """Add orange/red circles for delay hotspots with radius based on severity."""
+    for hs in hotspots:
+        severity = hs["avg_delay_hrs"] * hs["frequency"]
+        if severity > 20:
+            color = "#ef4444"
+            radius = 18
+        elif severity > 10:
+            color = "#f59e0b"
+            radius = 14
+        else:
+            color = "#f59e0b"
+            radius = 10
+
+        type_label = hs["type"].replace("_", " ").title()
+        popup_html = (
+            '<div style="font-family:Arial;min-width:200px;background:#1A1527;color:#F0ECF5;'
+            'padding:10px;border-radius:8px;">'
+            f'<b style="color:{color};font-size:13px;">{hs["name"]}</b>'
+            f'<br><span style="color:#9B8FB5;font-size:0.8em;">{type_label}</span>'
+            '<hr style="margin:5px 0;border-color:#2E2545;">'
+            f'<b>Avg Delay:</b> {hs["avg_delay_hrs"]}h<br>'
+            f'<b>Frequency:</b> {hs["frequency"]} incidents<br>'
+            f'{hs["description"]}'
+            '</div>'
+        )
+        folium.CircleMarker(
+            location=[hs["lat"], hs["lon"]],
+            radius=radius,
+            color=color,
+            fill=True,
+            fill_color=color,
+            fill_opacity=0.3,
+            weight=2,
+            popup=folium.Popup(popup_html, max_width=280),
+            tooltip=f'{hs["name"]} — {hs["avg_delay_hrs"]}h avg delay',
+        ).add_to(m)
