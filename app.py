@@ -931,33 +931,6 @@ with st.sidebar:
         filter_priority = st.multiselect("Priority", ["Critical", "High", "Standard"], default=[], key="macro_priority")
         filter_delivery = st.multiselect("Delivery Status", ["On Time", "At Risk", "Delayed"], default=[], key="macro_delivery")
 
-        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-
-        # Custom alerts
-        critical_delayed = [s for s in shipments if s["priority"] == "Critical" and s["time_status"] == "Delayed"]
-        needs_action = [s for s in shipments if s["recommendation"]["recovery_action"]]
-
-        if critical_delayed:
-            details = "".join(
-                f'<div class="sb-detail">{s["id"]} &mdash; {s["port"].split("(")[0].strip()} &rarr; {s["destination"]}</div>'
-                for s in critical_delayed
-            )
-            st.markdown(
-                f'<div class="sb-alert crit"><strong>{len(critical_delayed)} critical shipment(s) delayed</strong>{details}</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                '<div class="sb-alert ok">No critical delays</div>',
-                unsafe_allow_html=True,
-            )
-
-        if needs_action:
-            st.markdown(
-                f'<div class="sb-alert warn"><strong>{len(needs_action)} shipment(s)</strong> require attention</div>',
-                unsafe_allow_html=True,
-            )
-
     else:
         # ── Micro Filters ──
         st.markdown("""
@@ -1047,6 +1020,35 @@ if view_mode == "Macro":
     </div>
     """, unsafe_allow_html=True)
 
+    # Critical warnings
+    critical_delayed = [s for s in filtered if s["priority"] == "Critical" and s["time_status"] == "Delayed"]
+    needs_action = [s for s in filtered if s["recommendation"]["recovery_action"]]
+
+    if critical_delayed:
+        details = "".join(
+            f'<div class="sb-detail">{s["id"]} &mdash; {s["port"].split("(")[0].strip()} &rarr; {s["destination"]}</div>'
+            for s in critical_delayed
+        )
+        st.markdown(
+            f'<div class="alert-strip critical"><span class="alert-icon">&#9888;</span>'
+            f'<span><strong>{len(critical_delayed)} critical shipment(s) delayed</strong>{details}</span></div>',
+            unsafe_allow_html=True,
+        )
+
+    if needs_action:
+        st.markdown(
+            f'<div class="alert-strip warn"><span class="alert-icon">&#9888;</span>'
+            f'<span><strong>{len(needs_action)} shipment(s)</strong> require attention</span></div>',
+            unsafe_allow_html=True,
+        )
+
+    if not critical_delayed and not needs_action:
+        st.markdown(
+            '<div class="alert-strip ok"><span class="alert-icon">&#10003;</span>'
+            '<span>No critical delays &mdash; all shipments operating normally</span></div>',
+            unsafe_allow_html=True,
+        )
+
     # Alert strip
     render_alert_strip(filtered)
 
@@ -1129,6 +1131,35 @@ else:
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    # Company warnings
+    micro_critical = [s for s in micro_filtered if s["priority"] == "Critical" and s["time_status"] == "Delayed"]
+    micro_needs_action = [s for s in micro_filtered if s["recommendation"]["recovery_action"]]
+
+    if micro_critical:
+        details = "".join(
+            f'<div class="sb-detail">{s["id"]} &mdash; {s["port"].split("(")[0].strip()} &rarr; {s["destination"]}</div>'
+            for s in micro_critical
+        )
+        st.markdown(
+            f'<div class="alert-strip critical"><span class="alert-icon">&#9888;</span>'
+            f'<span><strong>{len(micro_critical)} critical shipment(s) delayed</strong>{details}</span></div>',
+            unsafe_allow_html=True,
+        )
+
+    if micro_needs_action:
+        st.markdown(
+            f'<div class="alert-strip warn"><span class="alert-icon">&#9888;</span>'
+            f'<span><strong>{len(micro_needs_action)} shipment(s)</strong> require attention</span></div>',
+            unsafe_allow_html=True,
+        )
+
+    if not micro_critical and not micro_needs_action:
+        st.markdown(
+            '<div class="alert-strip ok"><span class="alert-icon">&#10003;</span>'
+            '<span>No critical delays &mdash; all shipments operating normally</span></div>',
+            unsafe_allow_html=True,
+        )
 
     # Sub-tabs
     overview_tab, drivers_tab, shipments_tab, analytics_tab = st.tabs(["Overview", "Drivers", "Shipments", "Analytics"])
