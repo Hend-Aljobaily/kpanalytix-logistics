@@ -455,6 +455,61 @@ def create_driver_route_map(driver, shipment, hotspots=None):
     return m
 
 
+def add_optimization_routes(m, route_options, incident=None, original_route=None):
+    """Render route options Google Maps style: recommended in blue, others greyed out.
+
+    - Original blocked route: red dashed
+    - Fastest & Cheapest alternatives: grey
+    - Balanced (recommended): blue highlight
+    """
+    # 1) Original blocked route — red dashed
+    if original_route and len(original_route) >= 2:
+        folium.PolyLine(
+            locations=original_route,
+            color="#E74C3C",
+            weight=3,
+            opacity=0.45,
+            dash_array="10 8",
+            tooltip="Original Route (blocked)",
+        ).add_to(m)
+
+    # 2) Grey alternative routes (drawn first so blue sits on top)
+    for opt in route_options:
+        if opt["name"] != "Balanced":
+            wps = opt.get("waypoints", [])
+            if wps and len(wps) >= 2:
+                folium.PolyLine(
+                    locations=wps,
+                    color="#9AA0A6",
+                    weight=4,
+                    opacity=0.45,
+                    tooltip=(
+                        f'{opt["name"]}: {opt["distance_km"]} km, '
+                        f'{opt["duration_hrs"]}h — {opt["cost"]["total"]:,.0f} SAR'
+                    ),
+                ).add_to(m)
+
+    # 3) Blue recommended route on top
+    for opt in route_options:
+        if opt["name"] == "Balanced":
+            wps = opt.get("waypoints", [])
+            if wps and len(wps) >= 2:
+                folium.PolyLine(
+                    locations=wps,
+                    color="#4285F4",
+                    weight=6,
+                    opacity=0.9,
+                    tooltip=(
+                        f'{opt["name"]} (Recommended): {opt["distance_km"]} km, '
+                        f'{opt["duration_hrs"]}h — {opt["cost"]["total"]:,.0f} SAR'
+                    ),
+                ).add_to(m)
+
+    # 4) Incident marker
+    if incident:
+        add_incident_marker(m, incident)
+
+
 def add_hotspot_markers(m, hotspots):
     """Add orange/red circles for delay hotspots with radius based on severity."""
     for hs in hotspots:

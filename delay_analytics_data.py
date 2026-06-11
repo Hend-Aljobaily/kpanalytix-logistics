@@ -297,35 +297,34 @@ INCIDENT_TYPES = [
 ]
 
 
-def _offset_waypoints(waypoints, offset_deg):
-    """Create alternate route by offsetting middle waypoints perpendicular to the route."""
-    if len(waypoints) < 3:
-        return waypoints[:]
+# Center of the Arabian Peninsula interior — detours bias toward this
+# point so routes never cross water (Red Sea / Persian Gulf).
+_SA_INTERIOR = [24.0, 44.0]
 
-    alt = [waypoints[0][:]]  # copy start
+
+def _generate_detour_waypoints(waypoints, strength=0.2):
+    """Create a road-realistic detour by shifting middle waypoints toward
+    the Arabian Peninsula interior.  This ensures alternate routes stay on
+    land instead of crossing the Red Sea or Persian Gulf."""
+    if not waypoints or len(waypoints) < 2:
+        return list(waypoints)
+
+    if len(waypoints) == 2:
+        start, end = waypoints[0], waypoints[1]
+        mid = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2]
+        shift_lat = (_SA_INTERIOR[0] - mid[0]) * strength
+        shift_lon = (_SA_INTERIOR[1] - mid[1]) * strength
+        return [start[:], [mid[0] + shift_lat, mid[1] + shift_lon], end[:]]
+
+    alt = [waypoints[0][:]]
     for i in range(1, len(waypoints) - 1):
-        # Offset perpendicular to route direction
-        prev = waypoints[i - 1]
         curr = waypoints[i]
-        nxt = waypoints[i + 1]
-        # Direction vector
-        dx = nxt[1] - prev[1]
-        dy = nxt[0] - prev[0]
-        length = math.sqrt(dx * dx + dy * dy)
-        if length == 0:
-            alt.append(curr[:])
-            continue
-        # Perpendicular (rotate 90 deg)
-        perp_lat = -dx / length * offset_deg
-        perp_lon = dy / length * offset_deg
-        # Taper offset: strongest in middle, weaker at edges
         t = i / (len(waypoints) - 1)
-        taper = math.sin(t * math.pi)
-        alt.append([
-            curr[0] + perp_lat * taper,
-            curr[1] + perp_lon * taper,
-        ])
-    alt.append(waypoints[-1][:])  # copy end
+        taper = math.sin(t * math.pi)  # strongest in middle
+        shift_lat = (_SA_INTERIOR[0] - curr[0]) * strength * taper
+        shift_lon = (_SA_INTERIOR[1] - curr[1]) * strength * taper
+        alt.append([curr[0] + shift_lat, curr[1] + shift_lon])
+    alt.append(waypoints[-1][:])
     return alt
 
 
@@ -364,9 +363,10 @@ def generate_active_incidents(shipments, company_id):
             incident_loc = waypoints[idx]
             extended_wps = waypoints
 
-        # Generate alternate route
-        offset = random.choice([-1, 1]) * random.uniform(0.3, 0.5)
-        alt_waypoints = _offset_waypoints(extended_wps, offset)
+        # Generate alternate route (biased toward peninsula interior)
+        alt_waypoints = _generate_detour_waypoints(
+            extended_wps, strength=random.uniform(0.15, 0.25)
+        )
 
         # Calculate distances
         orig_dist = s["route"]["distance_km"]
@@ -425,12 +425,18 @@ def _calc_cost(distance_km, duration_hrs, cost_params, is_cooled=False):
 
 
 def generate_route_options(incidents, cost_params):
-    """For each incident, generate 3 route options: Fastest, Cheapest, Balanced."""
+    """For each incident, generate 3 route options with realistic land-based waypoints."""
     options_by_incident = []
     for inc in incidents:
+        orig_wps = inc.get("original_route", [])
         orig_dist = inc["original_distance_km"]
         orig_dur = inc["original_duration_hrs"]
-        is_cooled = False  # We don't have truck type in incident, default regular
+        is_cooled = False
+
+        # Generate detour waypoints (all stay on land via interior bias)
+        fastest_wps = _generate_detour_waypoints(orig_wps, strength=0.08)
+        cheapest_wps = _generate_detour_waypoints(orig_wps, strength=0.30)
+        balanced_wps = _generate_detour_waypoints(orig_wps, strength=0.15)
 
         # Fastest: small detour, saves time vs blocked original
         fast_dist = round(orig_dist * random.uniform(1.05, 1.12))
@@ -441,8 +447,8 @@ def generate_route_options(incidents, cost_params):
         cheap_dist = round(orig_dist * random.uniform(1.18, 1.30))
         cheap_dur = round(orig_dur * random.uniform(1.10, 1.25), 1)
         cheap_cost_params = dict(cost_params)
-        cheap_cost_params["toll_flat_rate"] = 0  # avoids tolls
-        cheap_cost_params["fuel_cost_per_km"] = cost_params["fuel_cost_per_km"] * 0.85  # more efficient route
+        cheap_cost_params["toll_flat_rate"] = 0
+        cheap_cost_params["fuel_cost_per_km"] = cost_params["fuel_cost_per_km"] * 0.85
         cheap_cost = _calc_cost(cheap_dist, cheap_dur, cheap_cost_params, is_cooled)
 
         # Balanced: moderate trade-off
@@ -455,6 +461,7 @@ def generate_route_options(incidents, cost_params):
             "options": [
                 {
                     "name": "Fastest",
+                    "waypoints": fastest_wps,
                     "distance_km": fast_dist,
                     "duration_hrs": fast_dur,
                     "cost": fast_cost,
@@ -463,6 +470,7 @@ def generate_route_options(incidents, cost_params):
                 },
                 {
                     "name": "Cheapest",
+                    "waypoints": cheapest_wps,
                     "distance_km": cheap_dist,
                     "duration_hrs": cheap_dur,
                     "cost": cheap_cost,
@@ -471,6 +479,7 @@ def generate_route_options(incidents, cost_params):
                 },
                 {
                     "name": "Balanced",
+                    "waypoints": balanced_wps,
                     "distance_km": bal_dist,
                     "duration_hrs": bal_dur,
                     "cost": bal_cost,

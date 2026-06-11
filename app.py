@@ -32,6 +32,7 @@ from map_utils import (
     add_alternate_route,
     add_delay_colored_routes,
     create_driver_route_map,
+    add_optimization_routes,
 )
 from mock_data import generate_shipments, get_shipment_summary, get_port_summary
 from company_data import generate_company_data, get_company_summary, COMPANIES
@@ -1853,14 +1854,24 @@ else:
                             </div>
                             """, unsafe_allow_html=True)
 
-                # Map showing both routes
+                # Map — Google Maps style: blue recommended, grey alternatives, red dashed original
                 inc_map = create_base_map()
-                add_alternate_route(inc_map, inc["original_route"], inc["alternate_route"])
-                add_incident_marker(inc_map, inc)
+                _route_opts = route_options[inc_idx]["options"] if inc_idx < len(route_options) else []
+                add_optimization_routes(inc_map, _route_opts, incident=inc, original_route=inc["original_route"])
 
-                all_pts = inc["original_route"] + inc["alternate_route"]
-                if len(all_pts) >= 2:
-                    fit_map_bounds(inc_map, all_pts)
+                _all_map_pts = list(inc["original_route"])
+                for _opt in _route_opts:
+                    _all_map_pts.extend(_opt.get("waypoints", []))
+                if len(_all_map_pts) >= 2:
+                    fit_map_bounds(inc_map, _all_map_pts)
+
+                st.markdown(
+                    '<div style="display:flex;gap:16px;margin-bottom:4px;">'
+                    '<span style="font-size:0.75rem;color:#4285F4;font-weight:600;">&#9473;&#9473; Recommended</span>'
+                    '<span style="font-size:0.75rem;color:#9AA0A6;font-weight:600;">&#9473;&#9473; Alternatives</span>'
+                    '<span style="font-size:0.75rem;color:#E74C3C;font-weight:600;">&#9476;&#9476; Original (Blocked)</span>'
+                    '</div>', unsafe_allow_html=True,
+                )
                 st_folium(inc_map, use_container_width=True, height=380, returned_objects=[], key=f"analytics_incident_map_{inc_idx}")
 
                 drv_for_ship = next((d for d in comp_drivers if d.get("assigned_shipment_id") == inc["shipment_id"]), None)
