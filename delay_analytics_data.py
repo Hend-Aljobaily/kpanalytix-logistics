@@ -405,7 +405,180 @@ def generate_active_incidents(shipments, company_id):
 
 
 # ═══════════════════════════════════════════════════════════════
-# 1e. Master Function
+# 1e. Route Optimization Options
+# ═══════════════════════════════════════════════════════════════
+def _calc_cost(distance_km, duration_hrs, cost_params, is_cooled=False):
+    """Compute total route cost from parameters."""
+    fuel = distance_km * cost_params["fuel_cost_per_km"]
+    driver = duration_hrs * cost_params["driver_cost_per_hr"]
+    maint = distance_km * cost_params["maintenance_per_km"]
+    toll = cost_params["toll_flat_rate"]
+    cooled = distance_km * cost_params.get("cooled_surcharge_per_km", 0) if is_cooled else 0
+    return {
+        "fuel": round(fuel, 2),
+        "driver": round(driver, 2),
+        "maintenance": round(maint, 2),
+        "toll": round(toll, 2),
+        "cooled": round(cooled, 2),
+        "total": round(fuel + driver + maint + toll + cooled, 2),
+    }
+
+
+def generate_route_options(incidents, cost_params):
+    """For each incident, generate 3 route options: Fastest, Cheapest, Balanced."""
+    options_by_incident = []
+    for inc in incidents:
+        orig_dist = inc["original_distance_km"]
+        orig_dur = inc["original_duration_hrs"]
+        is_cooled = False  # We don't have truck type in incident, default regular
+
+        # Fastest: small detour, saves time vs blocked original
+        fast_dist = round(orig_dist * random.uniform(1.05, 1.12))
+        fast_dur = round(orig_dur * random.uniform(0.85, 0.95), 1)
+        fast_cost = _calc_cost(fast_dist, fast_dur, cost_params, is_cooled)
+
+        # Cheapest: longer route but avoids tolls and fuel-heavy segments
+        cheap_dist = round(orig_dist * random.uniform(1.18, 1.30))
+        cheap_dur = round(orig_dur * random.uniform(1.10, 1.25), 1)
+        cheap_cost_params = dict(cost_params)
+        cheap_cost_params["toll_flat_rate"] = 0  # avoids tolls
+        cheap_cost_params["fuel_cost_per_km"] = cost_params["fuel_cost_per_km"] * 0.85  # more efficient route
+        cheap_cost = _calc_cost(cheap_dist, cheap_dur, cheap_cost_params, is_cooled)
+
+        # Balanced: moderate trade-off
+        bal_dist = round(orig_dist * random.uniform(1.08, 1.18))
+        bal_dur = round(orig_dur * random.uniform(0.95, 1.05), 1)
+        bal_cost = _calc_cost(bal_dist, bal_dur, cost_params, is_cooled)
+
+        options_by_incident.append({
+            "shipment_id": inc["shipment_id"],
+            "options": [
+                {
+                    "name": "Fastest",
+                    "distance_km": fast_dist,
+                    "duration_hrs": fast_dur,
+                    "cost": fast_cost,
+                    "pros": "Shortest travel time, avoids incident zone quickly",
+                    "cons": "Slightly higher cost due to highway tolls",
+                },
+                {
+                    "name": "Cheapest",
+                    "distance_km": cheap_dist,
+                    "duration_hrs": cheap_dur,
+                    "cost": cheap_cost,
+                    "pros": "Lowest total cost, avoids toll roads",
+                    "cons": "Longer travel time and distance",
+                },
+                {
+                    "name": "Balanced",
+                    "distance_km": bal_dist,
+                    "duration_hrs": bal_dur,
+                    "cost": bal_cost,
+                    "pros": "Best trade-off between time and cost",
+                    "cons": "Not the fastest or cheapest individually",
+                },
+            ],
+        })
+    return options_by_incident
+
+
+# ═══════════════════════════════════════════════════════════════
+# 1f. Fleet Optimization Recommendations
+# ═══════════════════════════════════════════════════════════════
+def generate_fleet_recommendations(shipments, company_data, company_id):
+    """Generate actionable fleet optimization recommendations for a company."""
+    comp_shipments = [s for s in shipments if s.get("company_id") == company_id]
+    comp_drivers = company_data["drivers"].get(company_id, [])
+    comp_trucks = company_data["trucks"].get(company_id, [])
+
+    recommendations = []
+
+    # 1. Cooled truck priority
+    cooled_shipments = [s for s in comp_shipments if s.get("truck_type") == "Cooled"]
+    if cooled_shipments:
+        cooled_available = sum(1 for t in comp_trucks if t["type"] == "Cooled" and t["status"] != "maintenance")
+        if len(cooled_shipments) >= cooled_available:
+            recommendations.append({
+                "title": "Cooled Fleet at Capacity",
+                "description": f"{len(cooled_shipments)} shipments require cooled trucks but only {cooled_available} are available. "
+                               "Prioritize highest-value perishable cargo (Food & Medical) for cooled fleet allocation.",
+                "impact": "High",
+                "estimated_savings": "Prevent spoilage losses of 15,000-30,000 SAR",
+                "category": "fleet",
+            })
+
+    # 2. Fleet utilization
+    idle_trucks = [t for t in comp_trucks if t["status"] == "available"]
+    in_use = [t for t in comp_trucks if t["status"] == "in_use"]
+    if idle_trucks and len(idle_trucks) >= 3:
+        recommendations.append({
+            "title": "Underutilized Fleet Assets",
+            "description": f"{len(idle_trucks)} trucks are currently idle while {len(in_use)} are in use. "
+                           "Consider reassigning idle trucks to cover upcoming port arrivals or cross-docking needs.",
+            "impact": "Medium",
+            "estimated_savings": f"{len(idle_trucks) * 800:,} SAR/day in idle costs",
+            "category": "fleet",
+        })
+
+    # 3. Driver efficiency
+    if comp_drivers:
+        low_perf = [d for d in comp_drivers if d["stats"]["on_time_pct"] < 80]
+        if low_perf:
+            names = ", ".join(d["name"] for d in low_perf[:3])
+            recommendations.append({
+                "title": "Driver Performance Alert",
+                "description": f"{len(low_perf)} driver(s) below 80% on-time rate ({names}). "
+                               "Consider route reassignment to shorter or less congested corridors for improvement.",
+                "impact": "Medium",
+                "estimated_savings": f"Reduce delay penalties by ~{len(low_perf) * 2000:,} SAR/month",
+                "category": "drivers",
+            })
+
+    # 4. Revenue optimization
+    if comp_shipments:
+        shipments_with_dist = [(s, s["route"]["distance_km"]) for s in comp_shipments if s["route"]["distance_km"] > 0]
+        if shipments_with_dist:
+            avg_dist = sum(d for _, d in shipments_with_dist) / len(shipments_with_dist)
+            long_hauls = [(s, d) for s, d in shipments_with_dist if d > avg_dist * 1.5]
+            if long_hauls:
+                recommendations.append({
+                    "title": "Long-Haul Route Optimization",
+                    "description": f"{len(long_hauls)} shipments travel >50% above average distance ({avg_dist:.0f} km). "
+                                   "Evaluate relay-point handoffs at midway hubs to reduce single-driver fatigue and improve turnaround.",
+                    "impact": "High",
+                    "estimated_savings": f"Up to {len(long_hauls) * 1500:,} SAR in driver overtime savings",
+                    "category": "routes",
+                })
+
+    # 5. Maintenance scheduling
+    maint_trucks = [t for t in comp_trucks if t["status"] == "maintenance"]
+    high_mileage = [t for t in comp_trucks if t["mileage_km"] > 150000 and t["status"] != "maintenance"]
+    if high_mileage:
+        recommendations.append({
+            "title": "Preventive Maintenance Due",
+            "description": f"{len(high_mileage)} truck(s) exceed 150,000 km without scheduled maintenance. "
+                           f"Currently {len(maint_trucks)} in maintenance. Schedule rotation to prevent breakdowns.",
+            "impact": "High" if len(high_mileage) >= 3 else "Medium",
+            "estimated_savings": f"Avoid breakdown costs of {len(high_mileage) * 5000:,} SAR",
+            "category": "fleet",
+        })
+
+    # Always provide at least one recommendation
+    if not recommendations:
+        recommendations.append({
+            "title": "Fleet Operating Optimally",
+            "description": "All fleet assets, drivers, and routes are performing within optimal parameters. "
+                           "Continue monitoring for seasonal demand fluctuations.",
+            "impact": "Low",
+            "estimated_savings": "Maintaining current efficiency saves ~10,000 SAR/month",
+            "category": "general",
+        })
+
+    return recommendations
+
+
+# ═══════════════════════════════════════════════════════════════
+# 1g. Master Function
 # ═══════════════════════════════════════════════════════════════
 def generate_analytics_data(shipments, company_data):
     """Generate all analytics data for all companies."""
@@ -421,14 +594,17 @@ def generate_analytics_data(shipments, company_data):
 
     location_hotspots = {}
     active_incidents = {}
+    fleet_recommendations = {}
     for comp in company_data["companies"]:
         cid = comp["id"]
         location_hotspots[cid] = generate_location_hotspots(shipments, cid)
         active_incidents[cid] = generate_active_incidents(shipments, cid)
+        fleet_recommendations[cid] = generate_fleet_recommendations(shipments, company_data, cid)
 
     return {
         "delay_causes": delay_causes,
         "driver_history": driver_history,
         "location_hotspots": location_hotspots,
         "active_incidents": active_incidents,
+        "fleet_recommendations": fleet_recommendations,
     }

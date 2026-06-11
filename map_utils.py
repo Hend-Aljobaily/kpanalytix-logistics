@@ -372,6 +372,89 @@ def add_alternate_route(m, original_waypoints, alternate_waypoints):
         ).add_to(m)
 
 
+def add_delay_colored_routes(m, shipments):
+    """Draw all shipment routes color-coded by delay status and place truck markers."""
+    STATUS_COLORS = {"On Time": "#2ECC71", "At Risk": "#F39C12", "Delayed": "#E74C3C"}
+    for s in shipments:
+        waypoints = s["route"]["waypoints"]
+        if not waypoints or len(waypoints) < 2:
+            continue
+        color = STATUS_COLORS.get(s.get("time_status", "On Time"), "#B68FE8")
+        weight = 4 if s.get("time_status") == "Delayed" else 3
+        folium.PolyLine(
+            locations=waypoints,
+            color=color,
+            weight=weight,
+            opacity=0.8,
+            tooltip=f'{s["id"]} — {s.get("time_status", "Unknown")}',
+        ).add_to(m)
+        # Place truck at current position for in-transit shipments
+        if s["status"] == "In Transit":
+            truck_pos = simulate_truck_position(waypoints, s["progress"])
+            folium.CircleMarker(
+                location=truck_pos,
+                radius=6,
+                color=color,
+                fill=True,
+                fill_color=color,
+                fill_opacity=0.9,
+                weight=2,
+                tooltip=f'{s["id"]} — {s["progress"]:.0f}%',
+            ).add_to(m)
+
+
+def create_driver_route_map(driver, shipment, hotspots=None):
+    """Create a full route map for a driver's assigned shipment.
+
+    Shows origin/destination markers, the full route colored by delay status,
+    the driver's current interpolated position, and optional delay hotspots.
+    """
+    STATUS_COLORS = {"On Time": "#2ECC71", "At Risk": "#F39C12", "Delayed": "#E74C3C"}
+    waypoints = shipment["route"]["waypoints"]
+    color = STATUS_COLORS.get(shipment.get("time_status", "On Time"), "#B68FE8")
+
+    # Center on midpoint of route
+    mid = waypoints[len(waypoints) // 2]
+    m = folium.Map(location=mid, zoom_start=7, tiles="CartoDB dark_matter", control_scale=True)
+
+    # Full route line
+    if len(waypoints) >= 2:
+        folium.PolyLine(locations=waypoints, color=color, weight=4, opacity=0.85).add_to(m)
+
+    # Origin marker (port)
+    port_name = shipment["port"].split("(")[0].strip()
+    folium.Marker(
+        location=waypoints[0],
+        tooltip=f"Origin: {port_name}",
+        icon=folium.DivIcon(html=PORT_ICON_SVG, icon_size=(30, 30), icon_anchor=(15, 15)),
+    ).add_to(m)
+
+    # Destination marker
+    folium.Marker(
+        location=waypoints[-1],
+        tooltip=f"Destination: {shipment['destination']}",
+        icon=folium.DivIcon(html=CITY_ICON_SVG, icon_size=(20, 30), icon_anchor=(10, 30)),
+    ).add_to(m)
+
+    # Driver / truck current position
+    truck_pos = simulate_truck_position(waypoints, shipment["progress"])
+    svg = COOLED_TRUCK_SVG if shipment.get("truck_type") == "Cooled" else TRUCK_SVG
+    icon = folium.DivIcon(html=svg, icon_size=(42, 26), icon_anchor=(21, 13))
+    folium.Marker(
+        location=truck_pos,
+        tooltip=f'{driver["name"]} — {shipment["progress"]:.0f}%',
+        icon=icon,
+    ).add_to(m)
+
+    # Hotspots if available
+    if hotspots:
+        add_hotspot_markers(m, hotspots)
+
+    # Fit bounds
+    fit_map_bounds(m, waypoints)
+    return m
+
+
 def add_hotspot_markers(m, hotspots):
     """Add orange/red circles for delay hotspots with radius based on severity."""
     for hs in hotspots:

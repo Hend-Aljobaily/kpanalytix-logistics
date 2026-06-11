@@ -288,6 +288,16 @@ PRECOMPUTED_ROUTES = {
 }
 
 
+# ── Default Optimization Cost Parameters (SAR) ──
+DEFAULT_COST_PARAMS = {
+    "fuel_cost_per_km": 0.45,
+    "driver_cost_per_hr": 35.0,
+    "maintenance_per_km": 0.08,
+    "toll_flat_rate": 50.0,
+    "cooled_surcharge_per_km": 0.15,
+}
+
+
 def haversine_km(lat1, lon1, lat2, lon2):
     """Approximate great-circle distance in km between two points."""
     R = 6371
