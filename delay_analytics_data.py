@@ -11,6 +11,7 @@ from config import (
     PORTS, ALL_DESTINATIONS, CARGO_TYPES, PRECOMPUTED_ROUTES,
     get_precomputed_route,
 )
+from routing import get_route_alternatives as _osrm_get_alternatives
 
 # ── Delay Cause Pool ──
 CAUSE_TEMPLATES = [
@@ -357,41 +358,54 @@ def generate_active_incidents(shipments, company_id):
 
         incident_def = random.choice(INCIDENT_TYPES)
 
-        # Place incident along route
-        if len(waypoints) == 2:
-            # For 2-point routes, place incident at midpoint
-            mid_lat = (waypoints[0][0] + waypoints[1][0]) / 2
-            mid_lon = (waypoints[0][1] + waypoints[1][1]) / 2
-            incident_loc = [mid_lat, mid_lon]
-            # Create a 3-point route so we can generate an alternate
-            extended_wps = [waypoints[0], [mid_lat, mid_lon], waypoints[1]]
-        else:
-            frac = random.uniform(0.4, 0.7)
-            idx = int(frac * (len(waypoints) - 1))
-            idx = max(1, min(idx, len(waypoints) - 2))
-            incident_loc = waypoints[idx]
-            extended_wps = waypoints
+        # Place incident along route (~40-70% of the way)
+        frac = random.uniform(0.4, 0.7)
+        idx = int(frac * (len(waypoints) - 1))
+        idx = max(1, min(idx, len(waypoints) - 2))
+        incident_loc = waypoints[idx]
 
-        # Generate alternate route — small detour, stays close to original road
-        alt_waypoints = _generate_detour_waypoints(
-            extended_wps, strength=random.uniform(0.04, 0.08)
-        )
+        # Try OSRM alternatives for a real road-following alternate route
+        port_coords = PORTS.get(s["port"])
+        dest_coords = ALL_DESTINATIONS.get(s["destination"])
+        alt_waypoints = None
+        alt_dist = None
+        alt_duration = None
 
-        # Calculate distances
+        if port_coords and dest_coords:
+            alts = _osrm_get_alternatives(
+                {"lat": port_coords["lat"], "lon": port_coords["lon"]},
+                {"lat": dest_coords["lat"], "lon": dest_coords["lon"]},
+                num_alternatives=3,
+            )
+            if alts and len(alts) >= 2:
+                alt = alts[1]
+                alt_waypoints = alt["geometry"]
+                alt_dist = round(alt["distance_km"], 1)
+                alt_duration = round(alt["duration_hrs"], 1)
+
         orig_dist = s["route"]["distance_km"]
-        detour_pct = random.uniform(1.10, 1.25)
-        alt_dist = round(orig_dist * detour_pct)
-
         orig_duration = s["route"]["duration_hrs"]
-        # Alternate might save time (avoids incident wait) or add time (longer route)
-        time_diff = round(random.uniform(-1.5, 1.0), 1)
-        alt_duration = round(orig_duration + time_diff, 1)
 
+        if alt_waypoints is None:
+            # Fallback: if OSRM returned 1 route, use it (follows real roads);
+            # otherwise fall back to original waypoints as-is.
+            if port_coords and dest_coords:
+                alts_single = _osrm_get_alternatives(
+                    {"lat": port_coords["lat"], "lon": port_coords["lon"]},
+                    {"lat": dest_coords["lat"], "lon": dest_coords["lon"]},
+                    num_alternatives=1,
+                )
+                if alts_single:
+                    alt_waypoints = alts_single[0]["geometry"]
+                    alt_dist = round(alts_single[0]["distance_km"] * 1.05, 1)
+                    alt_duration = round(alts_single[0]["duration_hrs"], 1)
+            if alt_waypoints is None:
+                alt_waypoints = list(waypoints)
+                alt_dist = round(orig_dist * 1.15)
+                alt_duration = round(orig_duration * 1.05, 1)
+
+        time_diff = round(alt_duration - orig_duration, 1)
         now = datetime.now()
-
-        # Find assigned driver name
-        driver_name = "Unknown"
-        # We'll set this from outside if needed
 
         incidents.append({
             "shipment_id": s["id"],
@@ -434,7 +448,7 @@ def _calc_cost(distance_km, duration_hrs, cost_params, is_cooled=False):
 
 
 def generate_route_options(incidents, cost_params):
-    """For each incident, generate 3 route options with realistic land-based waypoints."""
+    """For each incident, generate 3 route options using OSRM road-following alternatives."""
     options_by_incident = []
     for inc in incidents:
         orig_wps = inc.get("original_route", [])
@@ -442,27 +456,65 @@ def generate_route_options(incidents, cost_params):
         orig_dur = inc["original_duration_hrs"]
         is_cooled = False
 
-        # Generate subtle detour variants (like Google Maps alternatives)
-        fastest_wps = _generate_detour_waypoints(orig_wps, strength=0.02)
-        cheapest_wps = _generate_detour_waypoints(orig_wps, strength=0.07)
-        balanced_wps = _generate_detour_waypoints(orig_wps, strength=0.04)
+        # Try OSRM alternatives for real road-following route options
+        port_coords = PORTS.get(inc.get("port", ""))
+        dest_coords = ALL_DESTINATIONS.get(inc.get("destination", ""))
+        osrm_alts = None
+        if port_coords and dest_coords:
+            osrm_alts = _osrm_get_alternatives(
+                {"lat": port_coords["lat"], "lon": port_coords["lon"]},
+                {"lat": dest_coords["lat"], "lon": dest_coords["lon"]},
+                num_alternatives=3,
+            )
 
-        # Fastest: small detour, saves time vs blocked original
-        fast_dist = round(orig_dist * random.uniform(1.05, 1.12))
-        fast_dur = round(orig_dur * random.uniform(0.85, 0.95), 1)
+        if osrm_alts and len(osrm_alts) >= 2:
+            # Use real OSRM alternatives — all follow actual roads
+            # Sort by duration to assign roles: fastest, then others
+            sorted_alts = sorted(osrm_alts, key=lambda r: r["duration_hrs"])
+
+            fastest_alt = sorted_alts[0]
+            cheapest_alt = sorted_alts[-1]  # longest route tends to be cheapest (avoids highways)
+            balanced_alt = sorted_alts[len(sorted_alts) // 2] if len(sorted_alts) >= 3 else sorted_alts[0]
+
+            fastest_wps = fastest_alt["geometry"]
+            fast_dist = round(fastest_alt["distance_km"], 1)
+            fast_dur = round(fastest_alt["duration_hrs"], 1)
+
+            cheapest_wps = cheapest_alt["geometry"]
+            cheap_dist = round(cheapest_alt["distance_km"], 1)
+            cheap_dur = round(cheapest_alt["duration_hrs"], 1)
+
+            balanced_wps = balanced_alt["geometry"]
+            bal_dist = round(balanced_alt["distance_km"], 1)
+            bal_dur = round(balanced_alt["duration_hrs"], 1)
+        elif osrm_alts and len(osrm_alts) == 1:
+            # Single OSRM route — use same road-following geometry for all 3
+            # (realistic: single highway, optimize speed vs fuel cost)
+            the_route = osrm_alts[0]
+            fastest_wps = cheapest_wps = balanced_wps = the_route["geometry"]
+            fast_dist = round(the_route["distance_km"], 1)
+            fast_dur = round(the_route["duration_hrs"] * 0.92, 1)  # higher speed
+            cheap_dist = round(the_route["distance_km"], 1)
+            cheap_dur = round(the_route["duration_hrs"] * 1.10, 1)  # lower speed, saves fuel
+            bal_dist = round(the_route["distance_km"], 1)
+            bal_dur = round(the_route["duration_hrs"], 1)
+        else:
+            # Final fallback: no OSRM at all — use precomputed waypoints as-is
+            fastest_wps = cheapest_wps = balanced_wps = list(orig_wps)
+            fast_dist = round(orig_dist * random.uniform(1.05, 1.12))
+            fast_dur = round(orig_dur * random.uniform(0.85, 0.95), 1)
+            cheap_dist = round(orig_dist * random.uniform(1.18, 1.30))
+            cheap_dur = round(orig_dur * random.uniform(1.10, 1.25), 1)
+            bal_dist = round(orig_dist * random.uniform(1.08, 1.18))
+            bal_dur = round(orig_dur * random.uniform(0.95, 1.05), 1)
+
         fast_cost = _calc_cost(fast_dist, fast_dur, cost_params, is_cooled)
 
-        # Cheapest: longer route but avoids tolls and fuel-heavy segments
-        cheap_dist = round(orig_dist * random.uniform(1.18, 1.30))
-        cheap_dur = round(orig_dur * random.uniform(1.10, 1.25), 1)
         cheap_cost_params = dict(cost_params)
         cheap_cost_params["toll_flat_rate"] = 0
         cheap_cost_params["fuel_cost_per_km"] = cost_params["fuel_cost_per_km"] * 0.85
         cheap_cost = _calc_cost(cheap_dist, cheap_dur, cheap_cost_params, is_cooled)
 
-        # Balanced: moderate trade-off
-        bal_dist = round(orig_dist * random.uniform(1.08, 1.18))
-        bal_dur = round(orig_dur * random.uniform(0.95, 1.05), 1)
         bal_cost = _calc_cost(bal_dist, bal_dur, cost_params, is_cooled)
 
         options_by_incident.append({

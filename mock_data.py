@@ -9,6 +9,35 @@ from config import (
     PORTS, ALL_DESTINATIONS, CARGO_TYPES, VESSEL_NAMES, COOLED_CARGO,
     get_precomputed_route,
 )
+from routing import get_route as _osrm_get_route
+
+
+# ── OSRM geometry cache (port_name, dest_name) -> OSRM result ──
+_osrm_geom_cache = {}
+
+
+def _fetch_osrm_geometry(port_name, dest_name):
+    """Fetch dense road-following geometry from OSRM for a port→dest pair.
+
+    Returns an OSRM result dict with 'geometry', 'distance_km', 'duration_hrs'
+    or None if the API call fails.  Results are cached per (port, dest) pair.
+    """
+    key = (port_name, dest_name)
+    if key in _osrm_geom_cache:
+        return _osrm_geom_cache[key]
+
+    port_coords = PORTS.get(port_name)
+    dest_coords = ALL_DESTINATIONS.get(dest_name)
+    if not port_coords or not dest_coords:
+        _osrm_geom_cache[key] = None
+        return None
+
+    result = _osrm_get_route(
+        {"lat": port_coords["lat"], "lon": port_coords["lon"]},
+        {"lat": dest_coords["lat"], "lon": dest_coords["lon"]},
+    )
+    _osrm_geom_cache[key] = result
+    return result
 
 
 def _seed_consistent():
@@ -40,6 +69,16 @@ def generate_shipments(count=15):
         truck_type = "Cooled" if cargo in COOLED_CARGO else "Regular"
 
         route = get_precomputed_route(port, dest)
+
+        # Try OSRM for dense road-following geometry (hundreds of points)
+        osrm = _fetch_osrm_geometry(port, dest)
+        if osrm and osrm.get("geometry"):
+            route = {
+                "waypoints": osrm["geometry"],
+                "distance_km": round(osrm["distance_km"], 1),
+                "duration_hrs": round(osrm["duration_hrs"], 1),
+            }
+
         drive_hrs = route["duration_hrs"]
 
         vessel_offset_hrs = random.uniform(-8, 16)

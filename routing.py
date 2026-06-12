@@ -7,10 +7,22 @@ import requests
 from datetime import datetime, timedelta
 from config import OSRM_BASE_URL
 
+# ── In-memory route cache ──
+# Keyed by rounded (lat1, lon1, lat2, lon2) to avoid duplicate OSRM calls.
+_route_cache = {}
+_alt_cache = {}
+
+
+def _cache_key(origin, destination):
+    return (
+        round(origin["lat"], 4), round(origin["lon"], 4),
+        round(destination["lat"], 4), round(destination["lon"], 4),
+    )
+
 
 def get_route(origin, destination):
     """
-    Get road route between two points using OSRM.
+    Get road route between two points using OSRM (cached).
 
     Args:
         origin: dict with 'lat' and 'lon'
@@ -20,6 +32,10 @@ def get_route(origin, destination):
         dict with 'geometry' (list of [lat, lon]), 'distance_km', 'duration_hrs'
         or None on failure.
     """
+    key = _cache_key(origin, destination)
+    if key in _route_cache:
+        return _route_cache[key]
+
     url = (
         f"{OSRM_BASE_URL}/route/v1/driving/"
         f"{origin['lon']},{origin['lat']};"
@@ -31,18 +47,69 @@ def get_route(origin, destination):
         resp.raise_for_status()
         data = resp.json()
         if data.get("code") != "Ok" or not data.get("routes"):
+            _route_cache[key] = None
             return None
         route = data["routes"][0]
         coords = route["geometry"]["coordinates"]
         # OSRM returns [lon, lat], convert to [lat, lon]
         geometry = [[c[1], c[0]] for c in coords]
-        return {
+        result = {
             "geometry": geometry,
             "distance_km": route["distance"] / 1000.0,
             "duration_hrs": route["duration"] / 3600.0,
         }
+        _route_cache[key] = result
+        return result
     except (requests.RequestException, KeyError, IndexError):
+        _route_cache[key] = None
         return None
+
+
+def get_route_alternatives(origin, destination, num_alternatives=3):
+    """
+    Get multiple route alternatives from OSRM (cached).
+
+    Returns:
+        list of dicts with 'geometry', 'distance_km', 'duration_hrs',
+        or None on failure.  The first element is the primary (fastest) route.
+    """
+    key = _cache_key(origin, destination)
+    if key in _alt_cache:
+        return _alt_cache[key]
+
+    url = (
+        f"{OSRM_BASE_URL}/route/v1/driving/"
+        f"{origin['lon']},{origin['lat']};"
+        f"{destination['lon']},{destination['lat']}"
+        f"?overview=full&geometries=geojson&alternatives={num_alternatives}"
+    )
+    try:
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("code") != "Ok" or not data.get("routes"):
+            _alt_cache[key] = None
+            return None
+        routes = []
+        for route in data["routes"]:
+            coords = route["geometry"]["coordinates"]
+            geometry = [[c[1], c[0]] for c in coords]
+            routes.append({
+                "geometry": geometry,
+                "distance_km": route["distance"] / 1000.0,
+                "duration_hrs": route["duration"] / 3600.0,
+            })
+        _alt_cache[key] = routes
+        return routes
+    except (requests.RequestException, KeyError, IndexError):
+        _alt_cache[key] = None
+        return None
+
+
+def clear_route_cache():
+    """Clear all cached routes (call on data refresh)."""
+    _route_cache.clear()
+    _alt_cache.clear()
 
 
 def get_route_multi_stop(waypoints):
