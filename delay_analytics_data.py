@@ -304,25 +304,34 @@ _SA_INTERIOR = [24.0, 44.0]
 
 def _generate_detour_waypoints(waypoints, strength=0.2):
     """Create a road-realistic detour by shifting middle waypoints toward
-    the Arabian Peninsula interior.  This ensures alternate routes stay on
-    land instead of crossing the Red Sea or Persian Gulf."""
+    the Arabian Peninsula interior.
+
+    Shifts are **capped at 0.35 degrees (~39 km)** so routes through the
+    UAE / Qatar corridor never get pulled across the Gulf even at high
+    strength values.
+    """
+    _MAX_SHIFT = 0.35  # ~39 km — keeps detours realistic
+
     if not waypoints or len(waypoints) < 2:
         return list(waypoints)
+
+    def _clamp(v):
+        return max(-_MAX_SHIFT, min(_MAX_SHIFT, v))
 
     if len(waypoints) == 2:
         start, end = waypoints[0], waypoints[1]
         mid = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2]
-        shift_lat = (_SA_INTERIOR[0] - mid[0]) * strength
-        shift_lon = (_SA_INTERIOR[1] - mid[1]) * strength
+        shift_lat = _clamp((_SA_INTERIOR[0] - mid[0]) * strength)
+        shift_lon = _clamp((_SA_INTERIOR[1] - mid[1]) * strength)
         return [start[:], [mid[0] + shift_lat, mid[1] + shift_lon], end[:]]
 
     alt = [waypoints[0][:]]
     for i in range(1, len(waypoints) - 1):
         curr = waypoints[i]
         t = i / (len(waypoints) - 1)
-        taper = math.sin(t * math.pi)  # strongest in middle
-        shift_lat = (_SA_INTERIOR[0] - curr[0]) * strength * taper
-        shift_lon = (_SA_INTERIOR[1] - curr[1]) * strength * taper
+        taper = math.sin(t * math.pi)
+        shift_lat = _clamp((_SA_INTERIOR[0] - curr[0]) * strength * taper)
+        shift_lon = _clamp((_SA_INTERIOR[1] - curr[1]) * strength * taper)
         alt.append([curr[0] + shift_lat, curr[1] + shift_lon])
     alt.append(waypoints[-1][:])
     return alt
@@ -363,9 +372,9 @@ def generate_active_incidents(shipments, company_id):
             incident_loc = waypoints[idx]
             extended_wps = waypoints
 
-        # Generate alternate route (biased toward peninsula interior)
+        # Generate alternate route — small detour, stays close to original road
         alt_waypoints = _generate_detour_waypoints(
-            extended_wps, strength=random.uniform(0.15, 0.25)
+            extended_wps, strength=random.uniform(0.04, 0.08)
         )
 
         # Calculate distances
@@ -433,10 +442,10 @@ def generate_route_options(incidents, cost_params):
         orig_dur = inc["original_duration_hrs"]
         is_cooled = False
 
-        # Generate detour waypoints (all stay on land via interior bias)
-        fastest_wps = _generate_detour_waypoints(orig_wps, strength=0.08)
-        cheapest_wps = _generate_detour_waypoints(orig_wps, strength=0.30)
-        balanced_wps = _generate_detour_waypoints(orig_wps, strength=0.15)
+        # Generate subtle detour variants (like Google Maps alternatives)
+        fastest_wps = _generate_detour_waypoints(orig_wps, strength=0.02)
+        cheapest_wps = _generate_detour_waypoints(orig_wps, strength=0.07)
+        balanced_wps = _generate_detour_waypoints(orig_wps, strength=0.04)
 
         # Fastest: small detour, saves time vs blocked original
         fast_dist = round(orig_dist * random.uniform(1.05, 1.12))
