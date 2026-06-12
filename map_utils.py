@@ -63,11 +63,12 @@ SHIP_SVG = """
 
 
 def create_base_map():
-    """Create a Folium map centered on Saudi Arabia with dark tiles."""
+    """Create a Folium map centered on Saudi Arabia with Google Maps tiles."""
     m = folium.Map(
         location=[MAP_CENTER["lat"], MAP_CENTER["lon"]],
         zoom_start=MAP_ZOOM,
-        tiles="CartoDB dark_matter",
+        tiles="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+        attr="Google",
         control_scale=True,
     )
     return m
@@ -415,7 +416,7 @@ def create_driver_route_map(driver, shipment, hotspots=None):
 
     # Center on midpoint of route
     mid = waypoints[len(waypoints) // 2]
-    m = folium.Map(location=mid, zoom_start=7, tiles="CartoDB dark_matter", control_scale=True)
+    m = folium.Map(location=mid, zoom_start=7, tiles="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", attr="Google", control_scale=True)
 
     # Full route line
     if len(waypoints) >= 2:

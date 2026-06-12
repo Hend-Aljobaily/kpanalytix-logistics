@@ -1464,7 +1464,8 @@ else:
             drv_map = folium.Map(
                 location=[drv_lat, drv_lon],
                 zoom_start=8,
-                tiles="CartoDB dark_matter",
+                tiles="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+                attr="Google",
             )
             folium.Marker(
                 location=[drv_lat, drv_lon],
