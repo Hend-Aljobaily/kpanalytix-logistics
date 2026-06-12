@@ -166,22 +166,28 @@ PRECOMPUTED_ROUTES = {
         "waypoints": [[26.45, 50.10], [26.30, 50.30], [26.23, 50.59]],
         "distance_km": 55, "duration_hrs": 0.8,
     },
+    # Doha: south through Al Hofuf, Salwa border crossing, into Qatar
     ("King Abdulaziz Port (Dammam)", "Doha, Qatar"): {
         "waypoints": [
-            [26.45, 50.10], [26.00, 50.30], [25.50, 50.80], [25.29, 51.53],
+            [26.45, 50.10], [25.80, 49.80], [25.38, 49.59],
+            [25.00, 50.20], [24.70, 50.76], [25.00, 51.15], [25.29, 51.53],
         ],
         "distance_km": 480, "duration_hrs": 5.0,
     },
+    # Dubai: south via Al Hofuf, south of Qatar peninsula, Ghuweifat border, Abu Dhabi coast
     ("King Abdulaziz Port (Dammam)", "Dubai, UAE"): {
         "waypoints": [
-            [26.45, 50.10], [25.50, 50.80], [25.00, 52.00],
-            [24.50, 53.50], [25.20, 55.27],
+            [26.45, 50.10], [25.38, 49.59], [24.50, 49.50],
+            [24.10, 50.50], [24.05, 51.00], [24.12, 51.57],
+            [24.10, 52.70], [24.45, 54.38], [25.20, 55.27],
         ],
         "distance_km": 930, "duration_hrs": 9.5,
     },
+    # Kuwait: north-west along coast, inland through Khafji
     ("King Abdulaziz Port (Dammam)", "Kuwait City, Kuwait"): {
         "waypoints": [
-            [26.45, 50.10], [27.00, 49.80], [28.00, 48.80], [29.38, 47.98],
+            [26.45, 50.10], [26.80, 49.60], [27.50, 49.00],
+            [28.50, 48.30], [29.38, 47.98],
         ],
         "distance_km": 420, "duration_hrs": 4.2,
     },
@@ -197,23 +203,30 @@ PRECOMPUTED_ROUTES = {
         ],
         "distance_km": 880, "duration_hrs": 8.5,
     },
+    # Abu Dhabi: south of Qatar, Ghuweifat border, UAE coast road
     ("King Abdulaziz Port (Dammam)", "Abu Dhabi, UAE"): {
         "waypoints": [
-            [26.45, 50.10], [25.50, 50.80], [25.00, 52.00], [24.45, 54.38],
+            [26.45, 50.10], [25.38, 49.59], [24.50, 49.50],
+            [24.10, 50.50], [24.05, 51.00], [24.12, 51.57],
+            [24.10, 52.70], [24.45, 54.38],
         ],
         "distance_km": 870, "duration_hrs": 9.0,
     },
+    # Muscat: through UAE then east into Oman
     ("King Abdulaziz Port (Dammam)", "Muscat, Oman"): {
         "waypoints": [
-            [26.45, 50.10], [25.50, 50.80], [25.00, 52.00],
-            [24.00, 54.50], [23.59, 58.38],
+            [26.45, 50.10], [25.38, 49.59], [24.50, 49.50],
+            [24.10, 50.50], [24.05, 51.00], [24.12, 51.57],
+            [24.10, 52.70], [24.45, 54.38], [24.20, 55.80], [23.59, 58.38],
         ],
         "distance_km": 1350, "duration_hrs": 13.5,
     },
+    # Sharjah: same as Dubai corridor, then north to Sharjah
     ("King Abdulaziz Port (Dammam)", "Sharjah, UAE"): {
         "waypoints": [
-            [26.45, 50.10], [25.50, 50.80], [25.00, 52.00],
-            [24.80, 54.00], [25.35, 55.42],
+            [26.45, 50.10], [25.38, 49.59], [24.50, 49.50],
+            [24.10, 50.50], [24.05, 51.00], [24.12, 51.57],
+            [24.10, 52.70], [24.45, 54.38], [25.35, 55.42],
         ],
         "distance_km": 920, "duration_hrs": 9.3,
     },
@@ -227,9 +240,50 @@ PRECOMPUTED_ROUTES = {
     },
     ("Jubail Commercial Port", "Kuwait City, Kuwait"): {
         "waypoints": [
-            [27.00, 49.66], [27.50, 49.00], [28.50, 48.50], [29.38, 47.98],
+            [27.00, 49.66], [27.50, 49.00], [28.50, 48.30], [29.38, 47.98],
         ],
         "distance_km": 380, "duration_hrs": 3.8,
+    },
+    # Jubail → GCC: south through Dammam corridor, then land routes
+    ("Jubail Commercial Port", "Dubai, UAE"): {
+        "waypoints": [
+            [27.00, 49.66], [26.45, 50.10], [25.38, 49.59],
+            [24.50, 49.50], [24.10, 50.50], [24.05, 51.00],
+            [24.12, 51.57], [24.10, 52.70], [24.45, 54.38], [25.20, 55.27],
+        ],
+        "distance_km": 990, "duration_hrs": 10.0,
+    },
+    ("Jubail Commercial Port", "Doha, Qatar"): {
+        "waypoints": [
+            [27.00, 49.66], [26.45, 50.10], [25.38, 49.59],
+            [25.00, 50.20], [24.70, 50.76], [25.00, 51.15], [25.29, 51.53],
+        ],
+        "distance_km": 540, "duration_hrs": 5.5,
+    },
+    ("Jubail Commercial Port", "Abu Dhabi, UAE"): {
+        "waypoints": [
+            [27.00, 49.66], [26.45, 50.10], [25.38, 49.59],
+            [24.50, 49.50], [24.10, 50.50], [24.05, 51.00],
+            [24.12, 51.57], [24.10, 52.70], [24.45, 54.38],
+        ],
+        "distance_km": 930, "duration_hrs": 9.5,
+    },
+    ("Jubail Commercial Port", "Sharjah, UAE"): {
+        "waypoints": [
+            [27.00, 49.66], [26.45, 50.10], [25.38, 49.59],
+            [24.50, 49.50], [24.10, 50.50], [24.05, 51.00],
+            [24.12, 51.57], [24.10, 52.70], [24.45, 54.38], [25.35, 55.42],
+        ],
+        "distance_km": 980, "duration_hrs": 10.0,
+    },
+    ("Jubail Commercial Port", "Muscat, Oman"): {
+        "waypoints": [
+            [27.00, 49.66], [26.45, 50.10], [25.38, 49.59],
+            [24.50, 49.50], [24.10, 50.50], [24.05, 51.00],
+            [24.12, 51.57], [24.10, 52.70], [24.45, 54.38],
+            [24.20, 55.80], [23.59, 58.38],
+        ],
+        "distance_km": 1410, "duration_hrs": 14.0,
     },
     # === Yanbu Commercial Port ===
     ("Yanbu Commercial Port", "Madinah"): {
@@ -252,6 +306,28 @@ PRECOMPUTED_ROUTES = {
             [25.00, 46.50], [24.71, 46.68],
         ],
         "distance_km": 500, "duration_hrs": 5.0,
+    },
+    # Ras Al-Khair → GCC via Dammam/Jubail corridor
+    ("Ras Al-Khair Port", "Dubai, UAE"): {
+        "waypoints": [
+            [27.48, 49.25], [27.00, 49.66], [25.38, 49.59],
+            [24.50, 49.50], [24.10, 50.50], [24.05, 51.00],
+            [24.12, 51.57], [24.10, 52.70], [24.45, 54.38], [25.20, 55.27],
+        ],
+        "distance_km": 1030, "duration_hrs": 10.5,
+    },
+    ("Ras Al-Khair Port", "Doha, Qatar"): {
+        "waypoints": [
+            [27.48, 49.25], [27.00, 49.66], [25.38, 49.59],
+            [25.00, 50.20], [24.70, 50.76], [25.00, 51.15], [25.29, 51.53],
+        ],
+        "distance_km": 580, "duration_hrs": 6.0,
+    },
+    ("Ras Al-Khair Port", "Kuwait City, Kuwait"): {
+        "waypoints": [
+            [27.48, 49.25], [27.50, 49.00], [28.50, 48.30], [29.38, 47.98],
+        ],
+        "distance_km": 420, "duration_hrs": 4.3,
     },
     # === NEOM Port (Oxagon) ===
     ("NEOM Port (Oxagon)", "Tabuk"): {
@@ -310,7 +386,11 @@ def haversine_km(lat1, lon1, lat2, lon2):
 
 
 def get_precomputed_route(port_name, dest_name):
-    """Get pre-computed route data, falling back to straight-line estimate."""
+    """Get pre-computed route data, falling back to interior-routed estimate.
+
+    The fallback pulls the midpoint toward the Saudi interior [24, 46] so
+    that routes between coastal ports and GCC cities never cross water.
+    """
     key = (port_name, dest_name)
     if key in PRECOMPUTED_ROUTES:
         return PRECOMPUTED_ROUTES[key]
@@ -319,8 +399,18 @@ def get_precomputed_route(port_name, dest_name):
     straight_km = haversine_km(port["lat"], port["lon"], dest["lat"], dest["lon"])
     road_km = straight_km * 1.3
     duration_hrs = road_km / 100
+
+    # Pull midpoint toward peninsula interior to avoid Gulf / Red Sea
+    mid_lat = (port["lat"] + dest["lat"]) / 2
+    mid_lon = (port["lon"] + dest["lon"]) / 2
+    interior_lat = mid_lat + (24.0 - mid_lat) * 0.25
+    interior_lon = mid_lon + (46.0 - mid_lon) * 0.25
     return {
-        "waypoints": [[port["lat"], port["lon"]], [dest["lat"], dest["lon"]]],
+        "waypoints": [
+            [port["lat"], port["lon"]],
+            [interior_lat, interior_lon],
+            [dest["lat"], dest["lon"]],
+        ],
         "distance_km": round(road_km, 1),
         "duration_hrs": round(duration_hrs, 1),
     }
