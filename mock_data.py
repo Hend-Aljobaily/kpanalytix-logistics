@@ -81,7 +81,7 @@ def generate_shipments(count=15):
 
         drive_hrs = route["duration_hrs"]
 
-        vessel_offset_hrs = random.uniform(-8, 16)
+        vessel_offset_hrs = random.uniform(-24, 12)
         vessel_arrival = now + timedelta(hours=vessel_offset_hrs)
 
         unload_hrs = random.uniform(2, 4)

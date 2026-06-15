@@ -578,7 +578,7 @@ st.markdown("""
 # SESSION STATE
 # ══════════════════════════════════════════════════════════════════
 if "shipments" not in st.session_state:
-    st.session_state.shipments = generate_shipments(15)
+    st.session_state.shipments = generate_shipments(42)
 if "last_refresh" not in st.session_state:
     st.session_state.last_refresh = _now()
 if "selected_shipment_id" not in st.session_state:
@@ -595,7 +595,7 @@ if "dashboard_focus" not in st.session_state:
     st.session_state.dashboard_focus = "Overview"
 
 if (_now() - st.session_state.last_refresh).seconds > 3600:
-    st.session_state.shipments = generate_shipments(15)
+    st.session_state.shipments = generate_shipments(42)
     st.session_state.company_data = None
     st.session_state.analytics_data = None
     st.session_state.last_refresh = _now()
@@ -1011,7 +1011,7 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
     if st.button("Refresh Data", type="primary", use_container_width=True):
-        st.session_state.shipments = generate_shipments(15)
+        st.session_state.shipments = generate_shipments(42)
         st.session_state.company_data = None
         st.session_state.analytics_data = None
         st.session_state.last_refresh = _now()
@@ -1449,7 +1449,7 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-        # Driver route map — full route with selectable alternatives
+        # Driver route map — full route with clickable alternatives
         if sel_driver["assigned_shipment_id"]:
             _drv_ship = next((s for s in comp_shipments if s["id"] == sel_driver["assigned_shipment_id"]), None)
         else:
@@ -1459,8 +1459,7 @@ else:
             _drv_hotspots = analytics_data["location_hotspots"].get(selected_company_id, [])
 
             # Fetch OSRM route alternatives for this driver's shipment
-            from routing import get_route_alternatives as _drv_get_alts, get_route_via as _drv_get_via
-            from config import ALL_DESTINATIONS as _ALL_DEST, haversine_km as _hav_km
+            from routing import get_route_alternatives as _drv_get_alts
             _drv_port_coords = _drv_ship["port_coords"]
             _drv_dest_coords = _drv_ship["dest_coords"]
             _drv_osrm_alts = _drv_get_alts(
@@ -1469,62 +1468,18 @@ else:
                 num_alternatives=3,
             )
 
-            # Build route alternatives list
+            # Build route alternatives list from OSRM
             _drv_route_alts = []
             if _drv_osrm_alts:
                 for _ai, _alt in enumerate(_drv_osrm_alts):
-                    if _ai == 0:
-                        _label = "Recommended"
-                    else:
-                        _label = f"Route {chr(65 + _ai)}"
                     _drv_route_alts.append({
                         "geometry": _alt["geometry"],
                         "distance_km": round(_alt["distance_km"], 1),
                         "duration_hrs": round(_alt["duration_hrs"], 1),
-                        "label": _label,
+                        "label": "Recommended" if _ai == 0 else f"Route {chr(65 + _ai)}",
                     })
 
-            # If only 1 route, generate via-city alternatives
-            if len(_drv_route_alts) <= 1:
-                _orig = {"lat": _drv_port_coords["lat"], "lon": _drv_port_coords["lon"]}
-                _dst = {"lat": _drv_dest_coords["lat"], "lon": _drv_dest_coords["lon"]}
-                _mid_lat = (_orig["lat"] + _dst["lat"]) / 2
-                _mid_lon = (_orig["lon"] + _dst["lon"]) / 2
-                _direct_km = _hav_km(_orig["lat"], _orig["lon"], _dst["lat"], _dst["lon"])
-
-                # Find candidate via-cities: close to midpoint, not origin/dest
-                _port_short = _drv_ship["port"].split("(")[0].strip()
-                _candidates = []
-                for _cn, _cc in _ALL_DEST.items():
-                    if _cn == _drv_ship["destination"]:
-                        continue
-                    if _cn in _drv_ship["port"]:
-                        continue
-                    _dist_to_mid = _hav_km(_cc["lat"], _cc["lon"], _mid_lat, _mid_lon)
-                    # Via city should be within 60% of direct distance from the midpoint
-                    if _dist_to_mid < _direct_km * 0.6:
-                        _candidates.append((_cn, _cc, _dist_to_mid))
-                _candidates.sort(key=lambda x: x[2])
-
-                # Try up to 3 candidates, keep at most 2 via-routes
-                _via_routes_added = 0
-                for _cn, _cc, _ in _candidates[:5]:
-                    if _via_routes_added >= 2:
-                        break
-                    _via_result = _drv_get_via(_orig, _cc, _dst)
-                    if _via_result and _via_result["distance_km"] > 0:
-                        # Only keep if not too much longer than direct (< 2x)
-                        _base_km = _drv_route_alts[0]["distance_km"] if _drv_route_alts else _direct_km
-                        if _via_result["distance_km"] < _base_km * 2.0:
-                            _drv_route_alts.append({
-                                "geometry": _via_result["geometry"],
-                                "distance_km": round(_via_result["distance_km"], 1),
-                                "duration_hrs": round(_via_result["duration_hrs"], 1),
-                                "label": f"Via {_cn}",
-                            })
-                            _via_routes_added += 1
-
-            # Fallback — at least the shipment's own route
+            # Fallback — use the shipment's own route
             if not _drv_route_alts:
                 _drv_route_alts.append({
                     "geometry": _drv_ship["route"]["waypoints"],
@@ -1533,32 +1488,56 @@ else:
                     "label": "Recommended",
                 })
 
-            # Route selector — radio buttons with route details
+            # Selected route — stored in session state, reset when driver changes
+            _drv_route_key = f"drv_route_{sel_driver['id']}"
+            if _drv_route_key not in st.session_state:
+                st.session_state[_drv_route_key] = 0
+            _sel_route_idx = st.session_state[_drv_route_key]
+            if _sel_route_idx >= len(_drv_route_alts):
+                _sel_route_idx = 0
+
+            # Route info cards — clickable Google Maps style
             if len(_drv_route_alts) > 1:
-                _route_labels = []
-                for _ri, _ralt in enumerate(_drv_route_alts):
-                    _rh = int(_ralt["duration_hrs"])
-                    _rm = int((_ralt["duration_hrs"] % 1) * 60)
-                    _route_labels.append(
-                        f'{_ralt["label"]}  —  {_ralt["distance_km"]:.0f} km, {_rh}h {_rm}m'
-                    )
-                _sel_route_idx = st.radio(
-                    "Select route",
-                    options=list(range(len(_route_labels))),
-                    format_func=lambda i: _route_labels[i],
-                    index=0,
-                    horizontal=True,
-                    key="drv_route_selector",
-                )
+                _route_cols = st.columns(len(_drv_route_alts))
+                for _ri, (_rcol, _ralt) in enumerate(zip(_route_cols, _drv_route_alts)):
+                    with _rcol:
+                        _rh = int(_ralt["duration_hrs"])
+                        _rm = int((_ralt["duration_hrs"] % 1) * 60)
+                        _is_sel = (_ri == _sel_route_idx)
+                        _border_color = "#4285F4" if _is_sel else "var(--border)"
+                        _text_color = "#4285F4" if _is_sel else "var(--text-2)"
+                        _bg = "rgba(66,133,244,0.08)" if _is_sel else "transparent"
+                        _dot = "&#9679;" if _is_sel else "&#9675;"
+                        st.markdown(f"""
+                        <div style="border:2px solid {_border_color};border-radius:8px;padding:10px;
+                                    background:{_bg};text-align:center;cursor:pointer;">
+                            <div style="font-size:0.9rem;font-weight:700;color:{_text_color};">
+                                {_dot} {_ralt["label"]}
+                            </div>
+                            <div style="font-size:1.1rem;font-weight:700;color:var(--text-0);margin:4px 0;">
+                                {_rh}h {_rm}m
+                            </div>
+                            <div style="font-size:0.78rem;color:var(--text-2);">
+                                {_ralt["distance_km"]:.0f} km
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        if st.button(
+                            "Select" if not _is_sel else "Selected",
+                            key=f"drv_route_btn_{_ri}",
+                            disabled=_is_sel,
+                            use_container_width=True,
+                        ):
+                            st.session_state[_drv_route_key] = _ri
+                            st.rerun()
+
                 # Legend
                 st.markdown(
-                    '<div style="display:flex;gap:16px;margin-bottom:4px;">'
-                    '<span style="font-size:0.75rem;color:#4285F4;font-weight:600;">&#9473;&#9473; Selected</span>'
+                    '<div style="display:flex;gap:16px;margin:4px 0 4px 0;">'
+                    '<span style="font-size:0.75rem;color:#4285F4;font-weight:600;">&#9473;&#9473; Selected Route</span>'
                     '<span style="font-size:0.75rem;color:#9AA0A6;font-weight:600;">&#9473;&#9473; Alternatives</span>'
                     '</div>', unsafe_allow_html=True,
                 )
-            else:
-                _sel_route_idx = 0
 
             drv_map = create_driver_route_map(
                 sel_driver, _drv_ship,
@@ -1566,7 +1545,31 @@ else:
                 route_alternatives=_drv_route_alts,
                 selected_route_idx=_sel_route_idx,
             )
-            st_folium(drv_map, use_container_width=True, height=350, returned_objects=[], key="drv_location_map")
+
+            # Render map — capture clicks on grey routes
+            _map_data = st_folium(drv_map, use_container_width=True, height=400, returned_objects=["last_object_clicked"], key="drv_location_map")
+
+            # Click detection — switch to nearest route when clicking on map
+            if len(_drv_route_alts) > 1 and _map_data and _map_data.get("last_object_clicked"):
+                _click = _map_data["last_object_clicked"]
+                _click_key = (round(_click["lat"], 5), round(_click["lng"], 5))
+                if _click_key != st.session_state.get("_drv_last_click"):
+                    st.session_state["_drv_last_click"] = _click_key
+                    # Find nearest route to click point
+                    import math
+                    _best_idx = _sel_route_idx
+                    _best_dist = float("inf")
+                    for _ri, _ralt in enumerate(_drv_route_alts):
+                        # Sample every 50th point for performance
+                        for _pt in _ralt["geometry"][::50]:
+                            _d = math.sqrt((_pt[0] - _click["lat"])**2 + (_pt[1] - _click["lng"])**2)
+                            if _d < _best_dist:
+                                _best_dist = _d
+                                _best_idx = _ri
+                    # Only switch if click is reasonably close to a route (~0.3 degrees)
+                    if _best_dist < 0.3 and _best_idx != _sel_route_idx:
+                        st.session_state[_drv_route_key] = _best_idx
+                        st.rerun()
         else:
             drv_lat, drv_lon = sel_driver["current_location"]
             drv_map = folium.Map(
