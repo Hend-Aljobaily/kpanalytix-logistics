@@ -1459,7 +1459,8 @@ else:
             _drv_hotspots = analytics_data["location_hotspots"].get(selected_company_id, [])
 
             # Fetch OSRM route alternatives for this driver's shipment
-            from routing import get_route_alternatives as _drv_get_alts
+            from routing import get_route_alternatives as _drv_get_alts, get_route_via as _drv_get_via
+            from config import ALL_DESTINATIONS as _ALL_DEST, haversine_km as _hav_km
             _drv_port_coords = _drv_ship["port_coords"]
             _drv_dest_coords = _drv_ship["dest_coords"]
             _drv_osrm_alts = _drv_get_alts(
@@ -1473,7 +1474,7 @@ else:
             if _drv_osrm_alts:
                 for _ai, _alt in enumerate(_drv_osrm_alts):
                     if _ai == 0:
-                        _label = "Recommended (Fastest)"
+                        _label = "Recommended"
                     else:
                         _label = f"Route {chr(65 + _ai)}"
                     _drv_route_alts.append({
@@ -1482,8 +1483,49 @@ else:
                         "duration_hrs": round(_alt["duration_hrs"], 1),
                         "label": _label,
                     })
-            else:
-                # No OSRM — use the existing route as single option
+
+            # If only 1 route, generate via-city alternatives
+            if len(_drv_route_alts) <= 1:
+                _orig = {"lat": _drv_port_coords["lat"], "lon": _drv_port_coords["lon"]}
+                _dst = {"lat": _drv_dest_coords["lat"], "lon": _drv_dest_coords["lon"]}
+                _mid_lat = (_orig["lat"] + _dst["lat"]) / 2
+                _mid_lon = (_orig["lon"] + _dst["lon"]) / 2
+                _direct_km = _hav_km(_orig["lat"], _orig["lon"], _dst["lat"], _dst["lon"])
+
+                # Find candidate via-cities: close to midpoint, not origin/dest
+                _port_short = _drv_ship["port"].split("(")[0].strip()
+                _candidates = []
+                for _cn, _cc in _ALL_DEST.items():
+                    if _cn == _drv_ship["destination"]:
+                        continue
+                    if _cn in _drv_ship["port"]:
+                        continue
+                    _dist_to_mid = _hav_km(_cc["lat"], _cc["lon"], _mid_lat, _mid_lon)
+                    # Via city should be within 60% of direct distance from the midpoint
+                    if _dist_to_mid < _direct_km * 0.6:
+                        _candidates.append((_cn, _cc, _dist_to_mid))
+                _candidates.sort(key=lambda x: x[2])
+
+                # Try up to 3 candidates, keep at most 2 via-routes
+                _via_routes_added = 0
+                for _cn, _cc, _ in _candidates[:5]:
+                    if _via_routes_added >= 2:
+                        break
+                    _via_result = _drv_get_via(_orig, _cc, _dst)
+                    if _via_result and _via_result["distance_km"] > 0:
+                        # Only keep if not too much longer than direct (< 2x)
+                        _base_km = _drv_route_alts[0]["distance_km"] if _drv_route_alts else _direct_km
+                        if _via_result["distance_km"] < _base_km * 2.0:
+                            _drv_route_alts.append({
+                                "geometry": _via_result["geometry"],
+                                "distance_km": round(_via_result["distance_km"], 1),
+                                "duration_hrs": round(_via_result["duration_hrs"], 1),
+                                "label": f"Via {_cn}",
+                            })
+                            _via_routes_added += 1
+
+            # Fallback — at least the shipment's own route
+            if not _drv_route_alts:
                 _drv_route_alts.append({
                     "geometry": _drv_ship["route"]["waypoints"],
                     "distance_km": _drv_ship["route"]["distance_km"],

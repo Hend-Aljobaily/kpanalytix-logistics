@@ -106,10 +106,54 @@ def get_route_alternatives(origin, destination, num_alternatives=3):
         return None
 
 
+_via_cache = {}
+
+
+def get_route_via(origin, via, destination):
+    """Route from origin through a via-point to destination using OSRM (cached).
+
+    Returns dict with 'geometry', 'distance_km', 'duration_hrs' or None.
+    """
+    key = (
+        round(origin["lat"], 4), round(origin["lon"], 4),
+        round(via["lat"], 4), round(via["lon"], 4),
+        round(destination["lat"], 4), round(destination["lon"], 4),
+    )
+    if key in _via_cache:
+        return _via_cache[key]
+
+    coords = (
+        f"{origin['lon']},{origin['lat']};"
+        f"{via['lon']},{via['lat']};"
+        f"{destination['lon']},{destination['lat']}"
+    )
+    url = f"{OSRM_BASE_URL}/route/v1/driving/{coords}?overview=full&geometries=geojson"
+    try:
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("code") != "Ok" or not data.get("routes"):
+            _via_cache[key] = None
+            return None
+        route = data["routes"][0]
+        geometry = [[c[1], c[0]] for c in route["geometry"]["coordinates"]]
+        result = {
+            "geometry": geometry,
+            "distance_km": route["distance"] / 1000.0,
+            "duration_hrs": route["duration"] / 3600.0,
+        }
+        _via_cache[key] = result
+        return result
+    except (requests.RequestException, KeyError, IndexError):
+        _via_cache[key] = None
+        return None
+
+
 def clear_route_cache():
     """Clear all cached routes (call on data refresh)."""
     _route_cache.clear()
     _alt_cache.clear()
+    _via_cache.clear()
 
 
 def get_route_multi_stop(waypoints):
