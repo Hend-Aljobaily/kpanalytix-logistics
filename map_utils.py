@@ -404,41 +404,89 @@ def add_delay_colored_routes(m, shipments):
             ).add_to(m)
 
 
-def create_driver_route_map(driver, shipment, hotspots=None):
-    """Create a full route map for a driver's assigned shipment.
+def create_driver_route_map(driver, shipment, hotspots=None,
+                            route_alternatives=None, selected_route_idx=0):
+    """Create a driver route map with selectable alternatives (Google Maps style).
 
-    Shows origin/destination markers, the full route colored by delay status,
-    the driver's current interpolated position, and optional delay hotspots.
+    Args:
+        driver: Driver dict.
+        shipment: Shipment dict with route waypoints.
+        hotspots: Optional delay hotspot list.
+        route_alternatives: List of route dicts, each with 'geometry',
+            'distance_km', 'duration_hrs', and 'label'.  Index 0 is the
+            model-recommended route.  If None, only the shipment's own
+            route is shown.
+        selected_route_idx: Which alternative is currently selected by
+            the driver (0 = recommended).
     """
+    BLUE = "#4285F4"      # Google blue — selected / recommended
+    GREY = "#9AA0A6"      # Google grey — unselected alternatives
     STATUS_COLORS = {"On Time": "#2ECC71", "At Risk": "#F39C12", "Delayed": "#E74C3C"}
-    waypoints = shipment["route"]["waypoints"]
-    color = STATUS_COLORS.get(shipment.get("time_status", "On Time"), "#B68FE8")
 
-    # Center on midpoint of route
-    mid = waypoints[len(waypoints) // 2]
-    m = folium.Map(location=mid, zoom_start=7, tiles="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", attr="Google", control_scale=True)
+    # Primary waypoints = selected route (or shipment route if no alternatives)
+    if route_alternatives and selected_route_idx < len(route_alternatives):
+        active_wps = route_alternatives[selected_route_idx]["geometry"]
+    else:
+        active_wps = shipment["route"]["waypoints"]
 
-    # Full route line
-    if len(waypoints) >= 2:
-        folium.PolyLine(locations=waypoints, color=color, weight=4, opacity=0.85).add_to(m)
+    # Centre map
+    mid = active_wps[len(active_wps) // 2]
+    m = folium.Map(
+        location=mid, zoom_start=7,
+        tiles="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+        attr="Google", control_scale=True,
+    )
 
-    # Origin marker (port)
+    # 1) Draw grey unselected alternatives first (underneath)
+    if route_alternatives:
+        for i, alt in enumerate(route_alternatives):
+            if i == selected_route_idx:
+                continue  # skip — drawn on top later
+            wps = alt["geometry"]
+            if wps and len(wps) >= 2:
+                _h = int(alt["duration_hrs"])
+                _m = int((alt["duration_hrs"] % 1) * 60)
+                folium.PolyLine(
+                    locations=wps,
+                    color=GREY,
+                    weight=5,
+                    opacity=0.45,
+                    tooltip=f'{alt["label"]}: {alt["distance_km"]:.0f} km, {_h}h {_m}m',
+                ).add_to(m)
+
+    # 2) Draw selected route on top — Google blue
+    if active_wps and len(active_wps) >= 2:
+        sel_label = ""
+        if route_alternatives and selected_route_idx < len(route_alternatives):
+            sel = route_alternatives[selected_route_idx]
+            _h = int(sel["duration_hrs"])
+            _m_min = int((sel["duration_hrs"] % 1) * 60)
+            sel_label = f'{sel["label"]}: {sel["distance_km"]:.0f} km, {_h}h {_m_min}m'
+        folium.PolyLine(
+            locations=active_wps,
+            color=BLUE,
+            weight=6,
+            opacity=0.9,
+            tooltip=sel_label or "Current Route",
+        ).add_to(m)
+
+    # 3) Origin marker (port)
     port_name = shipment["port"].split("(")[0].strip()
     folium.Marker(
-        location=waypoints[0],
+        location=active_wps[0],
         tooltip=f"Origin: {port_name}",
         icon=folium.DivIcon(html=PORT_ICON_SVG, icon_size=(30, 30), icon_anchor=(15, 15)),
     ).add_to(m)
 
-    # Destination marker
+    # 4) Destination marker
     folium.Marker(
-        location=waypoints[-1],
+        location=active_wps[-1],
         tooltip=f"Destination: {shipment['destination']}",
         icon=folium.DivIcon(html=CITY_ICON_SVG, icon_size=(20, 30), icon_anchor=(10, 30)),
     ).add_to(m)
 
-    # Driver / truck current position
-    truck_pos = simulate_truck_position(waypoints, shipment["progress"])
+    # 5) Driver / truck current position (along selected route)
+    truck_pos = simulate_truck_position(active_wps, shipment["progress"])
     svg = COOLED_TRUCK_SVG if shipment.get("truck_type") == "Cooled" else TRUCK_SVG
     icon = folium.DivIcon(html=svg, icon_size=(42, 26), icon_anchor=(21, 13))
     folium.Marker(
@@ -447,12 +495,16 @@ def create_driver_route_map(driver, shipment, hotspots=None):
         icon=icon,
     ).add_to(m)
 
-    # Hotspots if available
+    # 6) Hotspots
     if hotspots:
         add_hotspot_markers(m, hotspots)
 
-    # Fit bounds
-    fit_map_bounds(m, waypoints)
+    # 7) Fit bounds to all routes
+    all_pts = list(active_wps)
+    if route_alternatives:
+        for alt in route_alternatives:
+            all_pts.extend(alt["geometry"])
+    fit_map_bounds(m, all_pts)
     return m
 
 

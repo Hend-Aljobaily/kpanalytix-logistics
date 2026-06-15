@@ -1449,7 +1449,7 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-        # Driver route map — full route if assigned, or simple location pin
+        # Driver route map — full route with selectable alternatives
         if sel_driver["assigned_shipment_id"]:
             _drv_ship = next((s for s in comp_shipments if s["id"] == sel_driver["assigned_shipment_id"]), None)
         else:
@@ -1457,7 +1457,73 @@ else:
 
         if _drv_ship and _drv_ship["route"]["waypoints"]:
             _drv_hotspots = analytics_data["location_hotspots"].get(selected_company_id, [])
-            drv_map = create_driver_route_map(sel_driver, _drv_ship, hotspots=_drv_hotspots)
+
+            # Fetch OSRM route alternatives for this driver's shipment
+            from routing import get_route_alternatives as _drv_get_alts
+            _drv_port_coords = _drv_ship["port_coords"]
+            _drv_dest_coords = _drv_ship["dest_coords"]
+            _drv_osrm_alts = _drv_get_alts(
+                {"lat": _drv_port_coords["lat"], "lon": _drv_port_coords["lon"]},
+                {"lat": _drv_dest_coords["lat"], "lon": _drv_dest_coords["lon"]},
+                num_alternatives=3,
+            )
+
+            # Build route alternatives list
+            _drv_route_alts = []
+            if _drv_osrm_alts:
+                for _ai, _alt in enumerate(_drv_osrm_alts):
+                    if _ai == 0:
+                        _label = "Recommended (Fastest)"
+                    else:
+                        _label = f"Route {chr(65 + _ai)}"
+                    _drv_route_alts.append({
+                        "geometry": _alt["geometry"],
+                        "distance_km": round(_alt["distance_km"], 1),
+                        "duration_hrs": round(_alt["duration_hrs"], 1),
+                        "label": _label,
+                    })
+            else:
+                # No OSRM — use the existing route as single option
+                _drv_route_alts.append({
+                    "geometry": _drv_ship["route"]["waypoints"],
+                    "distance_km": _drv_ship["route"]["distance_km"],
+                    "duration_hrs": _drv_ship["route"]["duration_hrs"],
+                    "label": "Recommended",
+                })
+
+            # Route selector — radio buttons with route details
+            if len(_drv_route_alts) > 1:
+                _route_labels = []
+                for _ri, _ralt in enumerate(_drv_route_alts):
+                    _rh = int(_ralt["duration_hrs"])
+                    _rm = int((_ralt["duration_hrs"] % 1) * 60)
+                    _route_labels.append(
+                        f'{_ralt["label"]}  —  {_ralt["distance_km"]:.0f} km, {_rh}h {_rm}m'
+                    )
+                _sel_route_idx = st.radio(
+                    "Select route",
+                    options=list(range(len(_route_labels))),
+                    format_func=lambda i: _route_labels[i],
+                    index=0,
+                    horizontal=True,
+                    key="drv_route_selector",
+                )
+                # Legend
+                st.markdown(
+                    '<div style="display:flex;gap:16px;margin-bottom:4px;">'
+                    '<span style="font-size:0.75rem;color:#4285F4;font-weight:600;">&#9473;&#9473; Selected</span>'
+                    '<span style="font-size:0.75rem;color:#9AA0A6;font-weight:600;">&#9473;&#9473; Alternatives</span>'
+                    '</div>', unsafe_allow_html=True,
+                )
+            else:
+                _sel_route_idx = 0
+
+            drv_map = create_driver_route_map(
+                sel_driver, _drv_ship,
+                hotspots=_drv_hotspots,
+                route_alternatives=_drv_route_alts,
+                selected_route_idx=_sel_route_idx,
+            )
             st_folium(drv_map, use_container_width=True, height=350, returned_objects=[], key="drv_location_map")
         else:
             drv_lat, drv_lon = sel_driver["current_location"]
