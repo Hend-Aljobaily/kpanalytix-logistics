@@ -374,33 +374,33 @@ def add_alternate_route(m, original_waypoints, alternate_waypoints):
 
 
 def add_delay_colored_routes(m, shipments):
-    """Draw all shipment routes color-coded by delay status and place truck markers."""
-    STATUS_COLORS = {"On Time": "#2ECC71", "At Risk": "#F39C12", "Delayed": "#E74C3C"}
+    """Draw all shipment routes in blue with status-colored truck dots."""
+    ROUTE_BLUE = "#4285F4"
+    DOT_COLORS = {"On Time": "#2ECC71", "At Risk": "#F39C12", "Delayed": "#E74C3C"}
     for s in shipments:
         waypoints = s["route"]["waypoints"]
         if not waypoints or len(waypoints) < 2:
             continue
-        color = STATUS_COLORS.get(s.get("time_status", "On Time"), "#B68FE8")
-        weight = 4 if s.get("time_status") == "Delayed" else 3
         folium.PolyLine(
             locations=waypoints,
-            color=color,
-            weight=weight,
-            opacity=0.8,
+            color=ROUTE_BLUE,
+            weight=3,
+            opacity=0.7,
             tooltip=f'{s["id"]} — {s.get("time_status", "Unknown")}',
         ).add_to(m)
-        # Place truck at current position for in-transit shipments
+        # Place truck dot at current position — colored by delivery status
         if s["status"] == "In Transit":
+            dot_color = DOT_COLORS.get(s.get("time_status", "On Time"), "#B68FE8")
             truck_pos = simulate_truck_position(waypoints, s["progress"])
             folium.CircleMarker(
                 location=truck_pos,
-                radius=6,
-                color=color,
+                radius=7,
+                color=dot_color,
                 fill=True,
-                fill_color=color,
+                fill_color=dot_color,
                 fill_opacity=0.9,
                 weight=2,
-                tooltip=f'{s["id"]} — {s["progress"]:.0f}%',
+                tooltip=f'{s["id"]} — {s["progress"]:.0f}% — {s.get("time_status", "")}',
             ).add_to(m)
 
 

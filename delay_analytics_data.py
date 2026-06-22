@@ -521,6 +521,12 @@ def generate_route_options(incidents, cost_params):
             bal_dur = round(the_route["duration_hrs"], 1)
         else:
             # No OSRM — offset precomputed waypoints for visual distinction
+            # Safeguard: if orig_wps is empty, try to get route from precomputed data
+            if not orig_wps or len(orig_wps) < 2:
+                _fb_route = get_precomputed_route(inc.get("port", ""), inc.get("destination", ""))
+                orig_wps = _fb_route.get("waypoints", [])
+                orig_dist = _fb_route.get("distance_km", orig_dist)
+                orig_dur = _fb_route.get("duration_hrs", orig_dur)
             balanced_wps = list(orig_wps)
             fastest_wps = _offset_route_waypoints(balanced_wps, 0.025, -0.02)
             cheapest_wps = _offset_route_waypoints(balanced_wps, -0.02, 0.025)

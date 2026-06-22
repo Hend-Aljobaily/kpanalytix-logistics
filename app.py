@@ -592,6 +592,10 @@ if "view_mode" not in st.session_state:
 if "cost_params" not in st.session_state:
     st.session_state.cost_params = dict(DEFAULT_COST_PARAMS)
 st.session_state.dashboard_focus = "Overview"
+if "micro_kpi_filter" not in st.session_state:
+    st.session_state.micro_kpi_filter = None
+if "macro_kpi_filter" not in st.session_state:
+    st.session_state.macro_kpi_filter = None
 
 if (_now() - st.session_state.last_refresh).seconds > 3600:
     st.session_state.shipments = generate_shipments(42)
@@ -1021,72 +1025,71 @@ if filter_priority:
 if filter_delivery:
     filtered = [s for s in filtered if s["time_status"] in filter_delivery]
 
+# Apply KPI click filter (Macro)
+_maf = st.session_state.get("macro_kpi_filter")
+if _maf:
+    _maf_type, _maf_val = _maf
+    if _maf_type == "delivery":
+        filtered = [s for s in filtered if s["time_status"] == _maf_val]
+    elif _maf_type == "status":
+        filtered = [s for s in filtered if s["status"] == _maf_val]
+    elif _maf_type == "truck_type":
+        filtered = [s for s in filtered if s["truck_type"] == _maf_val]
+
 f_summary = get_shipment_summary(filtered)
 
 # ══════════════════════════════════════════════════════════════════
 # VIEW: MACRO or MICRO (controlled by sidebar)
 # ══════════════════════════════════════════════════════════════════
 if view_mode == "Macro":
-    # Dynamic KPI Rendering based on Dashboard Focus
     pct_on_time = round(f_summary["on_time"] / f_summary["total"] * 100) if f_summary["total"] else 0
-    _focus = st.session_state.dashboard_focus
 
-    if _focus == "Delays & Risk":
-        _critical_count = sum(1 for s in filtered if s["priority"] == "Critical" and s["time_status"] == "Delayed")
-        _recovery_count = sum(1 for s in filtered if s["recommendation"]["recovery_action"])
-        _delayed_hrs = [s["recommendation"]["buffer_hrs"] for s in filtered if s["time_status"] == "Delayed"]
-        _avg_delay = round(abs(sum(_delayed_hrs) / len(_delayed_hrs)), 1) if _delayed_hrs else 0
-        st.markdown(f"""
-        <div class="kpi-grid">
-            {kpi_html("Delayed", f_summary["delayed"], "var(--red)", "&#10006;")}
-            {kpi_html("At Risk", f_summary["at_risk"], "var(--amber)", "&#9888;")}
-            {kpi_html("Avg Delay", f'{_avg_delay}h', "var(--red)", "&#9201;")}
-            {kpi_html("Critical", _critical_count, "var(--red)", "&#9888;", "Delayed + Critical priority")}
-            {kpi_html("Recovery Needed", _recovery_count, "var(--amber)", "&#9881;", "Shipments needing action")}
-        </div>
-        """, unsafe_allow_html=True)
-    elif _focus == "Fleet & Drivers":
-        st.markdown(f"""
-        <div class="kpi-grid">
-            {kpi_html("Cooled Fleet", f_summary["cooled"], "var(--blue)", "&#10052;")}
-            {kpi_html("Regular Fleet", f_summary["regular"], "var(--accent)", "&#9951;")}
-            {kpi_html("In Transit", f_summary["in_transit"], "var(--accent)", "&#10132;")}
-            {kpi_html("At Port", f_summary["at_port"], "var(--blue)", "&#9875;")}
-            {kpi_html("Vessels Inbound", f_summary["vessel_enroute"], "var(--text-1)", "&#9973;")}
-        </div>
-        """, unsafe_allow_html=True)
-    elif _focus == "Performance":
-        _avg_dist = round(sum(s["route"]["distance_km"] for s in filtered) / len(filtered)) if filtered else 0
-        _avg_drive = round(sum(s["route"]["duration_hrs"] for s in filtered) / len(filtered), 1) if filtered else 0
-        st.markdown(f"""
-        <div class="kpi-grid">
-            {kpi_html("On-Time %", f'{pct_on_time}%', "var(--green)", "&#10003;")}
-            {kpi_html("Avg Buffer", f'{f_summary["avg_buffer_hrs"]}h', "var(--amber)" if f_summary["avg_buffer_hrs"] < 4 else "var(--green)", "&#9201;")}
-            {kpi_html("Delivered", f_summary["delivered"], "var(--green)", "&#10003;")}
-            {kpi_html("Avg Distance", f'{_avg_dist} km', "var(--accent)", "&#10132;")}
-            {kpi_html("Avg Drive Time", f'{_avg_drive}h', "var(--accent)", "&#9201;")}
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        # Overview (default) — original 10-card layout
-        st.markdown(f"""
-        <div class="kpi-grid">
-            {kpi_html("Total Shipments", f_summary["total"], "var(--text-0)", "&#9776;", f'{f_summary["delivered"]} delivered')}
-            {kpi_html("In Transit", f_summary["in_transit"], "var(--accent)", "&#10132;", f'{f_summary["vessel_enroute"]} vessels inbound')}
-            {kpi_html("At Port", f_summary["at_port"], "var(--blue)", "&#9875;", f'{f_summary["cooled"]} cooled &bull; {f_summary["regular"]} regular')}
-            {kpi_html("On Time", f"{pct_on_time}%", "var(--green)", "&#10003;", f'{f_summary["on_time"]} of {f_summary["total"]} shipments')}
-            {kpi_html("Avg Buffer", f'{f_summary["avg_buffer_hrs"]}h', "var(--amber)" if f_summary["avg_buffer_hrs"] < 4 else "var(--green)", "&#9201;", f'{f_summary["needs_action"]} need action')}
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown(f"""
-        <div class="kpi-grid">
-            {kpi_html("At Risk", f_summary["at_risk"], "var(--amber)", "&#9888;")}
-            {kpi_html("Delayed", f_summary["delayed"], "var(--red)", "&#10006;")}
-            {kpi_html("Cooled Fleet", f_summary["cooled"], "var(--blue)", "&#10052;")}
-            {kpi_html("Regular Fleet", f_summary["regular"], "var(--accent)", "&#9951;")}
-            {kpi_html("Vessels Inbound", f_summary["vessel_enroute"], "var(--text-1)", "&#9973;")}
-        </div>
-        """, unsafe_allow_html=True)
+    # Active KPI filter indicator
+    _maf = st.session_state.get("macro_kpi_filter")
+    if _maf:
+        _ftype, _fval = _maf
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+            f'<span style="font-size:0.78rem;color:var(--accent);font-weight:600;">Filtered: {_fval}</span>'
+            f'</div>', unsafe_allow_html=True)
+
+    # Clickable KPI cards — Row 1
+    _macro_kpis_r1 = [
+        ("Total Shipments", f_summary["total"], "var(--text-0)", "&#9776;", None),
+        ("On Time", f'{pct_on_time}%', "var(--green)", "&#10003;", ("delivery", "On Time")),
+        ("At Risk", f_summary["at_risk"], "var(--amber)", "&#9888;", ("delivery", "At Risk")),
+        ("Delayed", f_summary["delayed"], "var(--red)", "&#10006;", ("delivery", "Delayed")),
+        ("Avg Buffer", f'{f_summary["avg_buffer_hrs"]}h', "var(--amber)" if f_summary["avg_buffer_hrs"] < 4 else "var(--green)", "&#9201;", None),
+    ]
+    _macro_kpis_r2 = [
+        ("Cooled Fleet", f_summary["cooled"], "var(--blue)", "&#10052;", ("truck_type", "Cooled")),
+        ("Regular Fleet", f_summary["regular"], "var(--accent)", "&#9951;", ("truck_type", "Regular")),
+        ("In Transit", f_summary["in_transit"], "var(--accent)", "&#10132;", ("status", "In Transit")),
+        ("At Port", f_summary["at_port"], "var(--blue)", "&#9875;", ("status", "At Port")),
+        ("Delivered", f_summary["delivered"], "var(--green)", "&#10003;", ("status", "Delivered")),
+    ]
+
+    for _row_idx, _kpi_row in enumerate([_macro_kpis_r1, _macro_kpis_r2]):
+        _cols = st.columns(len(_kpi_row))
+        for _ki, (_col, (_label, _val, _color, _icon, _filter)) in enumerate(zip(_cols, _kpi_row)):
+            with _col:
+                _is_active = _maf == _filter if _filter else False
+                _border = f"border:2px solid #4285F4;background:rgba(66,133,244,0.08);" if _is_active else ""
+                st.markdown(
+                    f'<div class="kpi" style="{_border}">'
+                    f'<div class="kpi-accent" style="background:{_color};"></div>'
+                    f'<div class="kpi-icon" style="color:{_color};">{_icon}</div>'
+                    f'<div class="kpi-label">{_label}</div>'
+                    f'<div class="kpi-value" style="color:{_color};">{_val}</div>'
+                    f'</div>', unsafe_allow_html=True)
+                if _filter:
+                    _btn_label = "Clear" if _is_active else _label
+                    if st.button(_btn_label, key=f"maf_{_row_idx}_{_ki}", use_container_width=True):
+                        if _is_active:
+                            st.session_state.macro_kpi_filter = None
+                        else:
+                            st.session_state.macro_kpi_filter = _filter
+                        st.rerun()
 
     # Critical warnings
     critical_delayed = [s for s in filtered if s["priority"] == "Critical" and s["time_status"] == "Delayed"]
@@ -1184,6 +1187,17 @@ else:
     if micro_sb_delivery:
         micro_filtered = [s for s in micro_filtered if s["time_status"] in micro_sb_delivery]
 
+    # Apply KPI click filter (toggle filter from clicking KPI cards)
+    _mkf = st.session_state.get("micro_kpi_filter")
+    if _mkf:
+        _mkf_type, _mkf_val = _mkf
+        if _mkf_type == "delivery":
+            micro_filtered = [s for s in micro_filtered if s["time_status"] == _mkf_val]
+        elif _mkf_type == "status":
+            micro_filtered = [s for s in micro_filtered if s["status"] == _mkf_val]
+        elif _mkf_type == "truck_type":
+            micro_filtered = [s for s in micro_filtered if s["truck_type"] == _mkf_val]
+
     # Compute summary from filtered shipments
     mf_summary = get_shipment_summary(micro_filtered)
 
@@ -1240,66 +1254,52 @@ else:
         idle_drv = sum(1 for d in comp_drivers if d["status"] == "idle")
         fleet_in_use = sum(1 for t in comp_trucks if t["status"] == "in_use")
         fleet_util = round(fleet_in_use / len(comp_trucks) * 100) if comp_trucks else 0
-        _focus = st.session_state.dashboard_focus
+        # Active KPI filter indicator
+        _mkf = st.session_state.get("micro_kpi_filter")
+        if _mkf:
+            _ftype, _fval = _mkf
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+                f'<span style="font-size:0.78rem;color:var(--accent);font-weight:600;">Filtered: {_fval}</span>'
+                f'</div>', unsafe_allow_html=True)
 
-        if _focus == "Delays & Risk":
-            _micro_critical_cnt = sum(1 for s in micro_filtered if s["priority"] == "Critical" and s["time_status"] == "Delayed")
-            _micro_recovery = sum(1 for s in micro_filtered if s["recommendation"]["recovery_action"])
-            _micro_del_hrs = [s["recommendation"]["buffer_hrs"] for s in micro_filtered if s["time_status"] == "Delayed"]
-            _micro_avg_delay = round(abs(sum(_micro_del_hrs) / len(_micro_del_hrs)), 1) if _micro_del_hrs else 0
-            st.markdown(f"""
-            <div class="kpi-grid">
-                {kpi_html("Delayed", mf_summary["delayed"], "var(--red)", "&#10006;")}
-                {kpi_html("At Risk", mf_summary["at_risk"], "var(--amber)", "&#9888;")}
-                {kpi_html("Avg Delay", f'{_micro_avg_delay}h', "var(--red)", "&#9201;")}
-                {kpi_html("Critical", _micro_critical_cnt, "var(--red)", "&#9888;")}
-                {kpi_html("Recovery Needed", _micro_recovery, "var(--amber)", "&#9881;")}
-            </div>
-            """, unsafe_allow_html=True)
-        elif _focus == "Fleet & Drivers":
-            _cooled_pct = round(mf_summary["cooled"] / mf_summary["total"] * 100) if mf_summary["total"] else 0
-            _maint_trucks = sum(1 for t in comp_trucks if t["status"] == "maintenance")
-            st.markdown(f"""
-            <div class="kpi-grid">
-                {kpi_html("Active Drivers", active_drv, "var(--green)", "&#9823;")}
-                {kpi_html("Idle Drivers", idle_drv, "var(--amber)", "&#9202;")}
-                {kpi_html("Fleet Utilization", f'{fleet_util}%', "var(--accent)", "&#9951;")}
-                {kpi_html("Cooled Fleet %", f'{_cooled_pct}%', "var(--blue)", "&#10052;")}
-                {kpi_html("In Maintenance", _maint_trucks, "var(--text-2)", "&#9881;")}
-            </div>
-            """, unsafe_allow_html=True)
-        elif _focus == "Performance":
-            _m_avg_dist = round(sum(s["route"]["distance_km"] for s in micro_filtered) / len(micro_filtered)) if micro_filtered else 0
-            _m_avg_drive = round(sum(s["route"]["duration_hrs"] for s in micro_filtered) / len(micro_filtered), 1) if micro_filtered else 0
-            st.markdown(f"""
-            <div class="kpi-grid">
-                {kpi_html("On-Time %", f'{mf_on_time_pct}%', "var(--green)", "&#10003;")}
-                {kpi_html("Avg Buffer", f'{mf_summary["avg_buffer_hrs"]}h', "var(--amber)" if mf_summary["avg_buffer_hrs"] < 4 else "var(--green)", "&#9201;")}
-                {kpi_html("Delivered", mf_summary["delivered"], "var(--green)", "&#10003;")}
-                {kpi_html("Avg Distance", f'{_m_avg_dist} km', "var(--accent)", "&#10132;")}
-                {kpi_html("Avg Drive Time", f'{_m_avg_drive}h', "var(--accent)", "&#9201;")}
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            # Overview (default)
-            st.markdown(f"""
-            <div class="kpi-grid">
-                {kpi_html("Total Shipments", mf_summary["total"], "var(--text-0)", "&#9776;", f'{mf_summary["delivered"]} delivered')}
-                {kpi_html("Active Drivers", active_drv, "var(--green)", "&#9823;")}
-                {kpi_html("Fleet Utilization", f'{fleet_util}%', "var(--accent)", "&#9951;")}
-                {kpi_html("On-Time Rate", f'{mf_on_time_pct}%', "var(--green)", "&#10003;")}
-                {kpi_html("Avg Buffer", f'{mf_summary["avg_buffer_hrs"]}h', "var(--amber)" if mf_summary["avg_buffer_hrs"] < 4 else "var(--green)", "&#9201;")}
-            </div>
-            """, unsafe_allow_html=True)
-            st.markdown(f"""
-            <div class="kpi-grid">
-                {kpi_html("Cooled Fleet", mf_summary["cooled"], "var(--blue)", "&#10052;")}
-                {kpi_html("Regular Fleet", mf_summary["regular"], "var(--accent)", "&#9951;")}
-                {kpi_html("In Transit", mf_summary["in_transit"], "var(--accent)", "&#10132;")}
-                {kpi_html("At Port", mf_summary["at_port"], "var(--blue)", "&#9875;")}
-                {kpi_html("Delivered", mf_summary["delivered"], "var(--green)", "&#10003;")}
-            </div>
-            """, unsafe_allow_html=True)
+        # Clickable KPI cards — Row 1
+        _micro_kpis_r1 = [
+            ("Total Shipments", mf_summary["total"], "var(--text-0)", "&#9776;", None),
+            ("On Time", f'{mf_on_time_pct}%', "var(--green)", "&#10003;", ("delivery", "On Time")),
+            ("At Risk", mf_summary["at_risk"], "var(--amber)", "&#9888;", ("delivery", "At Risk")),
+            ("Delayed", mf_summary["delayed"], "var(--red)", "&#10006;", ("delivery", "Delayed")),
+            ("Avg Buffer", f'{mf_summary["avg_buffer_hrs"]}h', "var(--amber)" if mf_summary["avg_buffer_hrs"] < 4 else "var(--green)", "&#9201;", None),
+        ]
+        _micro_kpis_r2 = [
+            ("Cooled Fleet", mf_summary["cooled"], "var(--blue)", "&#10052;", ("truck_type", "Cooled")),
+            ("Regular Fleet", mf_summary["regular"], "var(--accent)", "&#9951;", ("truck_type", "Regular")),
+            ("In Transit", mf_summary["in_transit"], "var(--accent)", "&#10132;", ("status", "In Transit")),
+            ("At Port", mf_summary["at_port"], "var(--blue)", "&#9875;", ("status", "At Port")),
+            ("Delivered", mf_summary["delivered"], "var(--green)", "&#10003;", ("status", "Delivered")),
+        ]
+
+        for _row_idx, _kpi_row in enumerate([_micro_kpis_r1, _micro_kpis_r2]):
+            _cols = st.columns(len(_kpi_row))
+            for _ki, (_col, (_label, _val, _color, _icon, _filter)) in enumerate(zip(_cols, _kpi_row)):
+                with _col:
+                    _is_active = _mkf == _filter if _filter else False
+                    _border = f"border:2px solid #4285F4;background:rgba(66,133,244,0.08);" if _is_active else ""
+                    st.markdown(
+                        f'<div class="kpi" style="{_border}">'
+                        f'<div class="kpi-accent" style="background:{_color};"></div>'
+                        f'<div class="kpi-icon" style="color:{_color};">{_icon}</div>'
+                        f'<div class="kpi-label">{_label}</div>'
+                        f'<div class="kpi-value" style="color:{_color};">{_val}</div>'
+                        f'</div>', unsafe_allow_html=True)
+                    if _filter:
+                        _btn_label = "Clear" if _is_active else _label
+                        if st.button(_btn_label, key=f"mkpi_{_row_idx}_{_ki}", use_container_width=True):
+                            if _is_active:
+                                st.session_state.micro_kpi_filter = None
+                            else:
+                                st.session_state.micro_kpi_filter = _filter
+                            st.rerun()
 
         # Company Map — always show, use filtered shipments for routes if any
         st.markdown('<div class="sec-title">Company Routes</div>', unsafe_allow_html=True)
@@ -1645,6 +1645,7 @@ else:
 
             # Combined legend
             legend_parts = [
+                '<span style="font-size:0.75rem;color:#4285F4;font-weight:600;">&#9473; Routes</span>',
                 '<span style="font-size:0.75rem;color:#2ECC71;font-weight:600;">&#9679; On Time</span>',
                 '<span style="font-size:0.75rem;color:#F39C12;font-weight:600;">&#9679; At Risk</span>',
                 '<span style="font-size:0.75rem;color:#E74C3C;font-weight:600;">&#9679; Delayed</span>',
@@ -1653,7 +1654,6 @@ else:
                 legend_parts.append('<span style="font-size:0.75rem;color:#f59e0b;font-weight:600;">&#11044; Hotspots</span>')
             if a_incidents:
                 legend_parts.extend([
-                    '<span style="font-size:0.75rem;color:#4285F4;font-weight:600;">&#9473;&#9473; Selected Route</span>',
                     '<span style="font-size:0.75rem;color:#9AA0A6;font-weight:600;">&#9473;&#9473; Alternatives (click to select)</span>',
                     '<span style="font-size:0.75rem;color:#ef4444;font-weight:600;">&#9888; Incidents</span>',
                 ])
