@@ -1617,25 +1617,60 @@ else:
         a_incidents = analytics_data["active_incidents"].get(selected_company_id, [])
 
         # ════════════════════════════════════════════════════════════
-        # Section 0: Delay Overview Map
+        # Section 0: Unified Delay & Route Overview Map
         # ════════════════════════════════════════════════════════════
-        st.markdown('<div class="sec-title">Delay Overview Map</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sec-title">Delay &amp; Route Overview</div>', unsafe_allow_html=True)
+
+        # Pre-compute route options so they can be drawn on the unified map
+        route_options = generate_route_options(a_incidents, st.session_state.cost_params) if a_incidents else []
+
         if comp_shipments:
-            delay_map = create_base_map()
-            add_delay_colored_routes(delay_map, comp_shipments)
-            all_delay_wps = []
+            unified_map = create_base_map()
+
+            # Layer 1: Delay-colored routes + truck positions
+            add_delay_colored_routes(unified_map, comp_shipments)
+
+            # Layer 2: Hotspot markers
+            if a_hotspots:
+                add_hotspot_markers(unified_map, a_hotspots)
+
+            # Layer 3: Incident markers + route alternatives
+            for inc_idx, inc in enumerate(a_incidents):
+                _route_opts = route_options[inc_idx]["options"] if inc_idx < len(route_options) else []
+                add_optimization_routes(unified_map, _route_opts, incident=inc, original_route=inc["original_route"])
+
+            # Fit bounds to all visible features
+            all_map_pts = []
             for _s in comp_shipments:
-                all_delay_wps.extend(_s["route"]["waypoints"])
-            if all_delay_wps:
-                fit_map_bounds(delay_map, all_delay_wps)
+                all_map_pts.extend(_s["route"]["waypoints"])
+            for _h in a_hotspots:
+                all_map_pts.append([_h["lat"], _h["lon"]])
+            for inc_idx, inc in enumerate(a_incidents):
+                all_map_pts.extend(inc.get("original_route", []))
+                for _opt in (route_options[inc_idx]["options"] if inc_idx < len(route_options) else []):
+                    all_map_pts.extend(_opt.get("waypoints", []))
+            if all_map_pts:
+                fit_map_bounds(unified_map, all_map_pts)
+
+            # Combined legend
+            legend_parts = [
+                '<span style="font-size:0.75rem;color:#2ECC71;font-weight:600;">&#9679; On Time</span>',
+                '<span style="font-size:0.75rem;color:#F39C12;font-weight:600;">&#9679; At Risk</span>',
+                '<span style="font-size:0.75rem;color:#E74C3C;font-weight:600;">&#9679; Delayed</span>',
+            ]
+            if a_hotspots:
+                legend_parts.append('<span style="font-size:0.75rem;color:#f59e0b;font-weight:600;">&#11044; Hotspots</span>')
+            if a_incidents:
+                legend_parts.extend([
+                    '<span style="font-size:0.75rem;color:#4285F4;font-weight:600;">&#9473;&#9473; Recommended</span>',
+                    '<span style="font-size:0.75rem;color:#9AA0A6;font-weight:600;">&#9473;&#9473; Alternatives</span>',
+                    '<span style="font-size:0.75rem;color:#ef4444;font-weight:600;">&#9888; Incidents</span>',
+                ])
             st.markdown(
-                '<div style="display:flex;gap:16px;margin-bottom:8px;">'
-                '<span style="font-size:0.75rem;color:#2ECC71;font-weight:600;">&#9679; On Time</span>'
-                '<span style="font-size:0.75rem;color:#F39C12;font-weight:600;">&#9679; At Risk</span>'
-                '<span style="font-size:0.75rem;color:#E74C3C;font-weight:600;">&#9679; Delayed</span>'
-                '</div>', unsafe_allow_html=True,
+                '<div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:8px;">'
+                + ''.join(legend_parts) + '</div>', unsafe_allow_html=True,
             )
-            st_folium(delay_map, use_container_width=True, height=400, returned_objects=[], key="analytics_delay_map")
+            st_folium(unified_map, use_container_width=True, height=480, returned_objects=[], key="analytics_unified_map")
         else:
             st.markdown(
                 '<div class="panel" style="text-align:center;color:var(--text-2);padding:30px;">'
@@ -1847,19 +1882,7 @@ else:
         st.markdown('<div class="sec-title">Location Hotspots</div>', unsafe_allow_html=True)
 
         if a_hotspots:
-            # Hotspot map
-            hs_map = create_base_map()
-            add_hotspot_markers(hs_map, a_hotspots)
-            # Fit to hotspot bounds
-            hs_coords = [[h["lat"], h["lon"]] for h in a_hotspots]
-            if len(hs_coords) >= 2:
-                fit_map_bounds(hs_map, hs_coords)
-            elif hs_coords:
-                hs_map.location = hs_coords[0]
-                hs_map.zoom_start = 7
-            st_folium(hs_map, use_container_width=True, height=400, returned_objects=[], key="analytics_hotspot_map")
-
-            # Hotspot table
+            # Hotspot table (map is shown in unified overview above)
             hs_rows = []
             for idx, h in enumerate(a_hotspots):
                 severity_score = h["avg_delay_hrs"] * h["frequency"]
@@ -1905,9 +1928,7 @@ else:
         # ════════════════════════════════════════════════════════════
         st.markdown('<div class="sec-title">Route Optimization</div>', unsafe_allow_html=True)
 
-        if a_incidents:
-            route_options = generate_route_options(a_incidents, st.session_state.cost_params)
-
+        if a_incidents and route_options:
             for inc_idx, inc in enumerate(a_incidents):
                 inc_type_label = inc["incident_type"].replace("_", " ").title()
 
@@ -1924,7 +1945,7 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
-                # 3-option route comparison
+                # 3-option route comparison cards
                 opts = route_options[inc_idx]["options"] if inc_idx < len(route_options) else []
                 if opts:
                     opt_colors = {"Fastest": "var(--green)", "Cheapest": "var(--blue)", "Balanced": "var(--accent)"}
@@ -1965,26 +1986,6 @@ else:
                                 <div style="font-size:0.72rem;color:var(--amber);margin-top:2px;">&#9888; {opt["cons"]}</div>
                             </div>
                             """, unsafe_allow_html=True)
-
-                # Map — Google Maps style: blue recommended, grey alternatives, red dashed original
-                inc_map = create_base_map()
-                _route_opts = route_options[inc_idx]["options"] if inc_idx < len(route_options) else []
-                add_optimization_routes(inc_map, _route_opts, incident=inc, original_route=inc["original_route"])
-
-                _all_map_pts = list(inc["original_route"])
-                for _opt in _route_opts:
-                    _all_map_pts.extend(_opt.get("waypoints", []))
-                if len(_all_map_pts) >= 2:
-                    fit_map_bounds(inc_map, _all_map_pts)
-
-                st.markdown(
-                    '<div style="display:flex;gap:16px;margin-bottom:4px;">'
-                    '<span style="font-size:0.75rem;color:#4285F4;font-weight:600;">&#9473;&#9473; Recommended</span>'
-                    '<span style="font-size:0.75rem;color:#9AA0A6;font-weight:600;">&#9473;&#9473; Alternatives</span>'
-                    '<span style="font-size:0.75rem;color:#E74C3C;font-weight:600;">&#9476;&#9476; Original (Blocked)</span>'
-                    '</div>', unsafe_allow_html=True,
-                )
-                st_folium(inc_map, use_container_width=True, height=380, returned_objects=[], key=f"analytics_incident_map_{inc_idx}")
 
                 drv_for_ship = next((d for d in comp_drivers if d.get("assigned_shipment_id") == inc["shipment_id"]), None)
                 drv_name = drv_for_ship["name"] if drv_for_ship else "driver"

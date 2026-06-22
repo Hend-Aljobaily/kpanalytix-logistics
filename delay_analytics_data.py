@@ -430,6 +430,26 @@ def generate_active_incidents(shipments, company_id):
 # ═══════════════════════════════════════════════════════════════
 # 1e. Route Optimization Options
 # ═══════════════════════════════════════════════════════════════
+def _offset_route_waypoints(waypoints, offset_lat, offset_lon):
+    """Create a visually offset copy of a route for alternative display.
+
+    Start and end points stay fixed; middle points are shifted with a
+    sinusoidal taper (maximum at the midpoint, zero at endpoints).
+    """
+    if not waypoints or len(waypoints) < 3:
+        return [list(p) for p in waypoints]
+    result = [list(waypoints[0])]
+    for i in range(1, len(waypoints) - 1):
+        t = i / (len(waypoints) - 1)
+        taper = math.sin(t * math.pi)
+        result.append([
+            waypoints[i][0] + offset_lat * taper,
+            waypoints[i][1] + offset_lon * taper,
+        ])
+    result.append(list(waypoints[-1]))
+    return result
+
+
 def _calc_cost(distance_km, duration_hrs, cost_params, is_cooled=False):
     """Compute total route cost from parameters."""
     fuel = distance_km * cost_params["fuel_cost_per_km"]
@@ -488,19 +508,22 @@ def generate_route_options(incidents, cost_params):
             bal_dist = round(balanced_alt["distance_km"], 1)
             bal_dur = round(balanced_alt["duration_hrs"], 1)
         elif osrm_alts and len(osrm_alts) == 1:
-            # Single OSRM route — use same road-following geometry for all 3
-            # (realistic: single highway, optimize speed vs fuel cost)
+            # Single OSRM route — offset geometry for visual distinction
             the_route = osrm_alts[0]
-            fastest_wps = cheapest_wps = balanced_wps = the_route["geometry"]
+            balanced_wps = the_route["geometry"]
+            fastest_wps = _offset_route_waypoints(balanced_wps, 0.025, -0.02)
+            cheapest_wps = _offset_route_waypoints(balanced_wps, -0.02, 0.025)
             fast_dist = round(the_route["distance_km"], 1)
-            fast_dur = round(the_route["duration_hrs"] * 0.92, 1)  # higher speed
+            fast_dur = round(the_route["duration_hrs"] * 0.92, 1)
             cheap_dist = round(the_route["distance_km"], 1)
-            cheap_dur = round(the_route["duration_hrs"] * 1.10, 1)  # lower speed, saves fuel
+            cheap_dur = round(the_route["duration_hrs"] * 1.10, 1)
             bal_dist = round(the_route["distance_km"], 1)
             bal_dur = round(the_route["duration_hrs"], 1)
         else:
-            # Final fallback: no OSRM at all — use precomputed waypoints as-is
-            fastest_wps = cheapest_wps = balanced_wps = list(orig_wps)
+            # No OSRM — offset precomputed waypoints for visual distinction
+            balanced_wps = list(orig_wps)
+            fastest_wps = _offset_route_waypoints(balanced_wps, 0.025, -0.02)
+            cheapest_wps = _offset_route_waypoints(balanced_wps, -0.02, 0.025)
             fast_dist = round(orig_dist * random.uniform(1.05, 1.12))
             fast_dur = round(orig_dur * random.uniform(0.85, 0.95), 1)
             cheap_dist = round(orig_dist * random.uniform(1.18, 1.30))
