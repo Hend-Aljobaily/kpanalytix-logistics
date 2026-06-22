@@ -508,12 +508,13 @@ def create_driver_route_map(driver, shipment, hotspots=None,
     return m
 
 
-def add_optimization_routes(m, route_options, incident=None, original_route=None):
-    """Render route options Google Maps style: recommended in blue, others greyed out.
+def add_optimization_routes(m, route_options, incident=None, original_route=None,
+                           selected_name="Balanced"):
+    """Render route options Google Maps style: selected in blue, others greyed out.
 
-    - Original blocked route: red dashed
-    - Fastest & Cheapest alternatives: grey
-    - Balanced (recommended): blue highlight
+    Args:
+        selected_name: Name of the currently selected route option
+            ("Fastest", "Cheapest", or "Balanced").
     """
     # 1) Original blocked route — red dashed
     if original_route and len(original_route) >= 2:
@@ -526,9 +527,9 @@ def add_optimization_routes(m, route_options, incident=None, original_route=None
             tooltip="Original Route (blocked)",
         ).add_to(m)
 
-    # 2) Grey alternative routes (drawn first so blue sits on top)
+    # 2) Grey unselected routes (drawn first so blue sits on top)
     for opt in route_options:
-        if opt["name"] != "Balanced":
+        if opt["name"] != selected_name:
             wps = opt.get("waypoints", [])
             if wps and len(wps) >= 2:
                 folium.PolyLine(
@@ -542,9 +543,9 @@ def add_optimization_routes(m, route_options, incident=None, original_route=None
                     ),
                 ).add_to(m)
 
-    # 3) Blue recommended route on top
+    # 3) Blue selected route on top
     for opt in route_options:
-        if opt["name"] == "Balanced":
+        if opt["name"] == selected_name:
             wps = opt.get("waypoints", [])
             if wps and len(wps) >= 2:
                 folium.PolyLine(
@@ -553,7 +554,7 @@ def add_optimization_routes(m, route_options, incident=None, original_route=None
                     weight=6,
                     opacity=0.9,
                     tooltip=(
-                        f'{opt["name"]} (Recommended): {opt["distance_km"]} km, '
+                        f'{opt["name"]} (Selected): {opt["distance_km"]} km, '
                         f'{opt["duration_hrs"]}h — {opt["cost"]["total"]:,.0f} SAR'
                     ),
                 ).add_to(m)

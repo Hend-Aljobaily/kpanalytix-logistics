@@ -591,8 +591,7 @@ if "view_mode" not in st.session_state:
     st.session_state.view_mode = "Macro"
 if "cost_params" not in st.session_state:
     st.session_state.cost_params = dict(DEFAULT_COST_PARAMS)
-if "dashboard_focus" not in st.session_state:
-    st.session_state.dashboard_focus = "Overview"
+st.session_state.dashboard_focus = "Overview"
 
 if (_now() - st.session_state.last_refresh).seconds > 3600:
     st.session_state.shipments = generate_shipments(42)
@@ -938,14 +937,6 @@ with st.sidebar:
         filter_priority = st.multiselect("Priority", ["Critical", "High", "Standard"], default=[], key="macro_priority")
         filter_delivery = st.multiselect("Delivery Status", ["On Time", "At Risk", "Delayed"], default=[], key="macro_delivery")
 
-        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        st.session_state.dashboard_focus = st.radio(
-            "Dashboard Focus",
-            ["Overview", "Delays & Risk", "Fleet & Drivers", "Performance"],
-            index=["Overview", "Delays & Risk", "Fleet & Drivers", "Performance"].index(st.session_state.dashboard_focus),
-            key="macro_dashboard_focus",
-        )
-
         with st.expander("Optimization Parameters"):
             st.session_state.cost_params["fuel_cost_per_km"] = st.slider(
                 "Fuel Cost (SAR/km)", 0.20, 1.00, st.session_state.cost_params["fuel_cost_per_km"], 0.05, key="macro_fuel")
@@ -984,14 +975,6 @@ with st.sidebar:
         micro_sb_status = st.multiselect("Status", ["Vessel En Route", "At Port", "In Transit", "Delivered"], default=[], key="micro_sb_status")
         micro_sb_priority = st.multiselect("Priority", ["Critical", "High", "Standard"], default=[], key="micro_sb_priority")
         micro_sb_delivery = st.multiselect("Delivery Status", ["On Time", "At Risk", "Delayed"], default=[], key="micro_sb_delivery")
-
-        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        st.session_state.dashboard_focus = st.radio(
-            "Dashboard Focus",
-            ["Overview", "Delays & Risk", "Fleet & Drivers", "Performance"],
-            index=["Overview", "Delays & Risk", "Fleet & Drivers", "Performance"].index(st.session_state.dashboard_focus),
-            key="micro_dashboard_focus",
-        )
 
         with st.expander("Optimization Parameters"):
             st.session_state.cost_params["fuel_cost_per_km"] = st.slider(
@@ -1624,6 +1607,12 @@ else:
         # Pre-compute route options so they can be drawn on the unified map
         route_options = generate_route_options(a_incidents, st.session_state.cost_params) if a_incidents else []
 
+        # Session state for selected route per incident
+        for _ii in range(len(a_incidents)):
+            _sel_key = f"opt_route_sel_{selected_company_id}_{_ii}"
+            if _sel_key not in st.session_state:
+                st.session_state[_sel_key] = "Balanced"
+
         if comp_shipments:
             unified_map = create_base_map()
 
@@ -1634,10 +1623,12 @@ else:
             if a_hotspots:
                 add_hotspot_markers(unified_map, a_hotspots)
 
-            # Layer 3: Incident markers + route alternatives
+            # Layer 3: Incident markers + route alternatives (with selection)
             for inc_idx, inc in enumerate(a_incidents):
                 _route_opts = route_options[inc_idx]["options"] if inc_idx < len(route_options) else []
-                add_optimization_routes(unified_map, _route_opts, incident=inc, original_route=inc["original_route"])
+                _sel_name = st.session_state.get(f"opt_route_sel_{selected_company_id}_{inc_idx}", "Balanced")
+                add_optimization_routes(unified_map, _route_opts, incident=inc,
+                                        original_route=inc["original_route"], selected_name=_sel_name)
 
             # Fit bounds to all visible features
             all_map_pts = []
@@ -1662,15 +1653,42 @@ else:
                 legend_parts.append('<span style="font-size:0.75rem;color:#f59e0b;font-weight:600;">&#11044; Hotspots</span>')
             if a_incidents:
                 legend_parts.extend([
-                    '<span style="font-size:0.75rem;color:#4285F4;font-weight:600;">&#9473;&#9473; Recommended</span>',
-                    '<span style="font-size:0.75rem;color:#9AA0A6;font-weight:600;">&#9473;&#9473; Alternatives</span>',
+                    '<span style="font-size:0.75rem;color:#4285F4;font-weight:600;">&#9473;&#9473; Selected Route</span>',
+                    '<span style="font-size:0.75rem;color:#9AA0A6;font-weight:600;">&#9473;&#9473; Alternatives (click to select)</span>',
                     '<span style="font-size:0.75rem;color:#ef4444;font-weight:600;">&#9888; Incidents</span>',
                 ])
             st.markdown(
                 '<div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:8px;">'
                 + ''.join(legend_parts) + '</div>', unsafe_allow_html=True,
             )
-            st_folium(unified_map, use_container_width=True, height=480, returned_objects=[], key="analytics_unified_map")
+            _map_data = st_folium(unified_map, use_container_width=True, height=480,
+                                  returned_objects=["last_object_clicked"], key="analytics_unified_map")
+
+            # Click detection — switch to nearest route alternative
+            if a_incidents and route_options and _map_data and _map_data.get("last_object_clicked"):
+                import math as _math
+                _click = _map_data["last_object_clicked"]
+                _click_key = (round(_click["lat"], 5), round(_click["lng"], 5))
+                if _click_key != st.session_state.get("_analytics_last_click"):
+                    st.session_state["_analytics_last_click"] = _click_key
+                    _best_inc = None
+                    _best_name = None
+                    _best_dist = float("inf")
+                    for _ii, _inc in enumerate(a_incidents):
+                        _opts = route_options[_ii]["options"] if _ii < len(route_options) else []
+                        for _opt in _opts:
+                            _wps = _opt.get("waypoints", [])
+                            for _pt in _wps[::50]:
+                                _d = _math.sqrt((_pt[0] - _click["lat"])**2 + (_pt[1] - _click["lng"])**2)
+                                if _d < _best_dist:
+                                    _best_dist = _d
+                                    _best_inc = _ii
+                                    _best_name = _opt["name"]
+                    if _best_dist < 0.3 and _best_inc is not None:
+                        _cur_sel = st.session_state.get(f"opt_route_sel_{selected_company_id}_{_best_inc}", "Balanced")
+                        if _best_name != _cur_sel:
+                            st.session_state[f"opt_route_sel_{selected_company_id}_{_best_inc}"] = _best_name
+                            st.rerun()
         else:
             st.markdown(
                 '<div class="panel" style="text-align:center;color:var(--text-2);padding:30px;">'
@@ -1945,8 +1963,9 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
-                # 3-option route comparison cards
+                # 3-option route comparison cards with selection
                 opts = route_options[inc_idx]["options"] if inc_idx < len(route_options) else []
+                _cur_sel = st.session_state.get(f"opt_route_sel_{selected_company_id}_{inc_idx}", "Balanced")
                 if opts:
                     opt_colors = {"Fastest": "var(--green)", "Cheapest": "var(--blue)", "Balanced": "var(--accent)"}
                     opt_icons = {"Fastest": "&#9889;", "Cheapest": "&#9733;", "Balanced": "&#9878;"}
@@ -1957,10 +1976,14 @@ else:
                             _om = int((opt["duration_hrs"] % 1) * 60)
                             _color = opt_colors.get(opt["name"], "var(--accent)")
                             _icon = opt_icons.get(opt["name"], "")
+                            _is_sel = (opt["name"] == _cur_sel)
+                            _border = f"2px solid #4285F4" if _is_sel else f"none"
+                            _bg = "rgba(66,133,244,0.08)" if _is_sel else "transparent"
+                            _dot = "&#9679;" if _is_sel else "&#9675;"
                             st.markdown(f"""
-                            <div class="panel" style="border-left:3px solid {_color};">
+                            <div class="panel" style="border-left:3px solid {_color};border:{_border};background:{_bg};">
                                 <div style="font-size:0.82rem;font-weight:700;color:{_color};margin-bottom:8px;">
-                                    {_icon} {opt["name"]}
+                                    <span style="color:#4285F4;">{_dot}</span> {_icon} {opt["name"]}
                                 </div>
                                 <div class="detail-grid" style="grid-template-columns: 1fr 1fr;">
                                     <div class="detail-card">
@@ -1986,6 +2009,14 @@ else:
                                 <div style="font-size:0.72rem;color:var(--amber);margin-top:2px;">&#9888; {opt["cons"]}</div>
                             </div>
                             """, unsafe_allow_html=True)
+                            if st.button(
+                                "Selected" if _is_sel else "Select",
+                                key=f"opt_btn_{inc_idx}_{opt['name']}",
+                                disabled=_is_sel,
+                                use_container_width=True,
+                            ):
+                                st.session_state[f"opt_route_sel_{selected_company_id}_{inc_idx}"] = opt["name"]
+                                st.rerun()
 
                 drv_for_ship = next((d for d in comp_drivers if d.get("assigned_shipment_id") == inc["shipment_id"]), None)
                 drv_name = drv_for_ship["name"] if drv_for_ship else "driver"
