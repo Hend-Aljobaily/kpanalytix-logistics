@@ -96,6 +96,21 @@ CARGO_TYPES = [
 
 COOLED_CARGO = {"Food & Perishables", "Medical Supplies", "Agricultural Goods"}
 
+# ── Cargo Revenue Estimates (SAR per shipment) ──
+CARGO_REVENUE_MAP = {
+    "Medical Supplies": 12000,
+    "Electronics": 10000,
+    "Food & Perishables": 8500,
+    "Petrochemicals": 9000,
+    "Automotive Parts": 7500,
+    "Industrial Equipment": 7000,
+    "Government Documents": 6500,
+    "Construction Materials": 5500,
+    "Textiles": 5000,
+    "Agricultural Goods": 6000,
+}
+PRIORITY_REVENUE_MULTIPLIER = {"Critical": 1.5, "High": 1.2, "Standard": 1.0}
+
 # ── Vessel Names ──
 VESSEL_NAMES = [
     "MV Saudi Progress", "MV Gulf Pioneer", "MV Arabian Star",

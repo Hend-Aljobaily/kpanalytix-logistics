@@ -2006,8 +2006,123 @@ else:
         # ════════════════════════════════════════════════════════════
         st.markdown('<div class="sec-title">Fleet Optimization</div>', unsafe_allow_html=True)
 
-        a_fleet_recs = analytics_data.get("fleet_recommendations", {}).get(selected_company_id, [])
+        a_fleet_data = analytics_data.get("fleet_recommendations", {}).get(selected_company_id, {})
+        # Support both old list format and new dict format
+        if isinstance(a_fleet_data, list):
+            a_fleet_recs = a_fleet_data
+            cooled_table = []
+            driver_opt = []
+            reassign_actions = []
+        else:
+            a_fleet_recs = a_fleet_data.get("recommendations", [])
+            cooled_table = a_fleet_data.get("cooled_priority_table", [])
+            driver_opt = a_fleet_data.get("driver_optimization", [])
+            reassign_actions = a_fleet_data.get("reassignment_actions", [])
+
+        # ── Revenue KPI Strip ──
+        comp_ships_for_rev = [s for s in shipments if s.get("company_id") == selected_company_id]
+        total_rev = sum(s.get("estimated_revenue", 0) for s in comp_ships_for_rev)
+        cooled_rev = sum(s.get("estimated_revenue", 0) for s in comp_ships_for_rev if s.get("truck_type") == "Cooled")
+        risk_rev = sum(s.get("estimated_revenue", 0) for s in comp_ships_for_rev if s.get("time_status") in ("Delayed", "At Risk"))
+
+        kpi_cols = st.columns(3)
+        with kpi_cols[0]:
+            st.markdown(f"""
+            <div class="panel" style="text-align:center;">
+                <div style="font-size:0.72rem;color:var(--text-1);text-transform:uppercase;letter-spacing:1px;">Total Est. Revenue</div>
+                <div style="font-size:1.5rem;font-weight:800;color:var(--accent);">{total_rev:,.0f} <span style="font-size:0.7rem;">SAR</span></div>
+            </div>""", unsafe_allow_html=True)
+        with kpi_cols[1]:
+            st.markdown(f"""
+            <div class="panel" style="text-align:center;">
+                <div style="font-size:0.72rem;color:var(--text-1);text-transform:uppercase;letter-spacing:1px;">Cooled Cargo Value</div>
+                <div style="font-size:1.5rem;font-weight:800;color:var(--blue);">{cooled_rev:,.0f} <span style="font-size:0.7rem;">SAR</span></div>
+            </div>""", unsafe_allow_html=True)
+        with kpi_cols[2]:
+            st.markdown(f"""
+            <div class="panel" style="text-align:center;">
+                <div style="font-size:0.72rem;color:var(--text-1);text-transform:uppercase;letter-spacing:1px;">Revenue at Risk</div>
+                <div style="font-size:1.5rem;font-weight:800;color:var(--red);">{risk_rev:,.0f} <span style="font-size:0.7rem;">SAR</span></div>
+            </div>""", unsafe_allow_html=True)
+
+        # ── Cooled Fleet Priority Ranking Table ──
+        if cooled_table:
+            st.markdown('<div style="font-weight:700;color:var(--text-0);font-size:0.88rem;margin:16px 0 8px;">Cooled Fleet Priority Ranking</div>', unsafe_allow_html=True)
+            header = """<div class="panel" style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
+            <thead><tr style="border-bottom:1px solid var(--border);">
+                <th style="padding:6px 8px;text-align:left;color:var(--text-1);">Rank</th>
+                <th style="padding:6px 8px;text-align:left;color:var(--text-1);">Shipment</th>
+                <th style="padding:6px 8px;text-align:left;color:var(--text-1);">Cargo</th>
+                <th style="padding:6px 8px;text-align:left;color:var(--text-1);">Priority</th>
+                <th style="padding:6px 8px;text-align:right;color:var(--text-1);">Revenue (SAR)</th>
+                <th style="padding:6px 8px;text-align:left;color:var(--text-1);">Driver</th>
+                <th style="padding:6px 8px;text-align:left;color:var(--text-1);">Status</th>
+            </tr></thead><tbody>"""
+            rows = ""
+            for ct in cooled_table:
+                row_color = "rgba(46,204,113,0.08)" if ct["optimally_ranked"] else "rgba(243,156,18,0.08)"
+                status_color = {"On Time": "var(--green)", "At Risk": "var(--amber)", "Delayed": "var(--red)"}.get(ct["time_status"], "var(--text-1)")
+                priority_color = {"Critical": "var(--red)", "High": "var(--amber)", "Standard": "var(--text-1)"}.get(ct["priority"], "var(--text-1)")
+                rows += f"""<tr style="background:{row_color};border-bottom:1px solid rgba(46,37,69,0.3);">
+                    <td style="padding:6px 8px;color:var(--text-0);font-weight:700;">#{ct['rank']}</td>
+                    <td style="padding:6px 8px;color:var(--accent);">{ct['shipment_id']}</td>
+                    <td style="padding:6px 8px;color:var(--text-0);">{ct['cargo']}</td>
+                    <td style="padding:6px 8px;color:{priority_color};font-weight:600;">{ct['priority']}</td>
+                    <td style="padding:6px 8px;text-align:right;color:var(--text-0);font-weight:700;">{ct['revenue']:,.0f}</td>
+                    <td style="padding:6px 8px;color:var(--text-1);">{ct['assigned_driver']}</td>
+                    <td style="padding:6px 8px;color:{status_color};font-weight:600;">{ct['time_status']}</td>
+                </tr>"""
+            st.markdown(header + rows + "</tbody></table></div>", unsafe_allow_html=True)
+
+        # ── Driver-Shipment Optimization ──
+        if driver_opt:
+            st.markdown('<div style="font-weight:700;color:var(--text-0);font-size:0.88rem;margin:16px 0 8px;">Driver-Shipment Optimization</div>', unsafe_allow_html=True)
+            drv_cols = st.columns(min(3, len(driver_opt)))
+            for idx, dopt in enumerate(driver_opt[:6]):
+                col = drv_cols[idx % len(drv_cols)]
+                score = dopt["efficiency_score"]
+                if score >= 85:
+                    score_color = "var(--green)"
+                elif score >= 70:
+                    score_color = "var(--amber)"
+                else:
+                    score_color = "var(--red)"
+                ship_label = f"{dopt['assigned_shipment_id']} ({dopt['shipment_revenue']:,.0f} SAR)" if dopt["assigned_shipment_id"] else "No active shipment"
+                suggestion_color = "var(--green)" if "Optimal" in dopt["suggestion"] else "var(--amber)"
+                with col:
+                    st.markdown(f"""
+                    <div class="panel" style="margin-bottom:10px;">
+                        <div style="font-weight:700;color:var(--text-0);font-size:0.82rem;margin-bottom:6px;">{dopt['driver_name']}</div>
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                            <span style="font-size:1.3rem;font-weight:800;color:{score_color};">{score}</span>
+                            <span style="font-size:0.7rem;color:var(--text-1);">/ 100 efficiency</span>
+                        </div>
+                        <div style="font-size:0.72rem;color:var(--text-1);margin-bottom:4px;">
+                            OT: {dopt['stats']['on_time_pct']}% &middot; Rating: {dopt['stats']['avg_rating']:.1f} &middot; {dopt['stats']['km_per_month']:,} km/mo
+                        </div>
+                        <div style="font-size:0.75rem;color:var(--accent);margin-bottom:6px;">{ship_label}</div>
+                        <div style="font-size:0.72rem;color:{suggestion_color};font-weight:600;">{dopt['suggestion']}</div>
+                    </div>""", unsafe_allow_html=True)
+
+        # ── Recommended Reassignments ──
+        if reassign_actions:
+            st.markdown('<div style="font-weight:700;color:var(--text-0);font-size:0.88rem;margin:16px 0 8px;">Recommended Reassignments</div>', unsafe_allow_html=True)
+            for ra in reassign_actions:
+                st.markdown(f"""
+                <div class="panel" style="margin-bottom:10px;border-left:3px solid var(--amber);">
+                    <div style="font-size:0.82rem;color:var(--text-0);margin-bottom:6px;">
+                        <b>Swap</b> {ra['from_driver']} <span style="color:var(--green);">(score {ra['from_score']})</span>
+                        &#10132; <span style="color:var(--accent);">{ra['to_shipment']}</span> ({ra['to_revenue']:,.0f} SAR)
+                        &nbsp;with&nbsp;
+                        {ra['to_driver']} <span style="color:var(--red);">(score {ra['to_score']})</span>
+                        &#10132; <span style="color:var(--accent);">{ra['from_shipment']}</span> ({ra['from_revenue']:,.0f} SAR)
+                    </div>
+                    <div style="font-size:0.72rem;color:var(--text-1);">{ra['reason']}</div>
+                </div>""", unsafe_allow_html=True)
+
+        # ── Existing Recommendation Cards ──
         if a_fleet_recs:
+            st.markdown('<div style="font-weight:700;color:var(--text-0);font-size:0.88rem;margin:16px 0 8px;">Optimization Recommendations</div>', unsafe_allow_html=True)
             for rec_idx, rec in enumerate(a_fleet_recs):
                 _impact_pill = {
                     "High": "pill-red", "Medium": "pill-amber", "Low": "pill-green"
@@ -2028,7 +2143,7 @@ else:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-        else:
+        elif not cooled_table and not driver_opt:
             st.markdown(
                 '<div class="panel" style="text-align:center;color:var(--green);padding:30px;">'
                 '&#10003; Fleet is operating at optimal capacity.</div>',

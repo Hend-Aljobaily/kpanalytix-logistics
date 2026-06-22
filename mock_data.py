@@ -7,6 +7,7 @@ import random
 from datetime import datetime, timedelta
 from config import (
     PORTS, ALL_DESTINATIONS, CARGO_TYPES, VESSEL_NAMES, COOLED_CARGO,
+    CARGO_REVENUE_MAP, PRIORITY_REVENUE_MULTIPLIER,
     get_precomputed_route,
 )
 from routing import get_route as _osrm_get_route
@@ -153,6 +154,10 @@ def generate_shipments(count=15):
         else:
             recovery_action = None
 
+        base_rev = CARGO_REVENUE_MAP.get(cargo, 6000)
+        rev_mult = PRIORITY_REVENUE_MULTIPLIER.get(priority, 1.0)
+        estimated_revenue = round(base_rev * rev_mult * (route["distance_km"] / 500), 2)
+
         shipments.append({
             "id": f"SHP-{2026}{(i + 1):04d}",
             "company_id": None,
@@ -162,6 +167,7 @@ def generate_shipments(count=15):
             "cargo": cargo,
             "priority": priority,
             "truck_type": truck_type,
+            "estimated_revenue": estimated_revenue,
             "vessel_arrival": vessel_arrival,
             "truck_dispatch": truck_dispatch,
             "deadline": deadline,

@@ -556,15 +556,136 @@ def generate_route_options(incidents, cost_params):
 # 1f. Fleet Optimization Recommendations
 # ═══════════════════════════════════════════════════════════════
 def generate_fleet_recommendations(shipments, company_data, company_id):
-    """Generate actionable fleet optimization recommendations for a company."""
+    """Generate actionable fleet optimization recommendations for a company.
+
+    Returns a dict with:
+      - recommendations: list of recommendation cards
+      - cooled_priority_table: cooled shipments ranked by revenue
+      - driver_optimization: per-driver efficiency scores & suggestions
+      - reassignment_actions: specific swap recommendations
+    """
     comp_shipments = [s for s in shipments if s.get("company_id") == company_id]
     comp_drivers = company_data["drivers"].get(company_id, [])
     comp_trucks = company_data["trucks"].get(company_id, [])
 
     recommendations = []
 
-    # 1. Cooled truck priority
+    # ── Build driver→shipment lookup ──
+    driver_shipment_map = {}
+    for d in comp_drivers:
+        sid = d.get("assigned_shipment_id")
+        if sid:
+            matched = next((s for s in comp_shipments if s["id"] == sid), None)
+            driver_shipment_map[d["id"]] = matched
+
+    # ── Cooled Priority Table ──
     cooled_shipments = [s for s in comp_shipments if s.get("truck_type") == "Cooled"]
+    cooled_sorted = sorted(cooled_shipments, key=lambda s: s.get("estimated_revenue", 0), reverse=True)
+    cooled_priority_table = []
+    for rank, s in enumerate(cooled_sorted, 1):
+        assigned_driver = None
+        for d in comp_drivers:
+            if d.get("assigned_shipment_id") == s["id"]:
+                assigned_driver = d["name"]
+                break
+        cooled_priority_table.append({
+            "rank": rank,
+            "shipment_id": s["id"],
+            "cargo": s["cargo"],
+            "priority": s["priority"],
+            "revenue": s.get("estimated_revenue", 0),
+            "assigned_driver": assigned_driver or "Unassigned",
+            "time_status": s["time_status"],
+            "optimally_ranked": rank <= len([t for t in comp_trucks if t["type"] == "Cooled" and t["status"] != "maintenance"]),
+        })
+
+    # ── Driver Optimization Scores ──
+    driver_optimization = []
+    for d in comp_drivers:
+        stats = d["stats"]
+        on_time_score = stats["on_time_pct"] * 0.4
+        rating_score = (stats["avg_rating"] / 5) * 100 * 0.3
+        km_score = min(100, stats["km_per_month"] / 100) * 0.3
+        efficiency = round(on_time_score + rating_score + km_score, 1)
+
+        assigned_ship = driver_shipment_map.get(d["id"])
+        ship_revenue = assigned_ship.get("estimated_revenue", 0) if assigned_ship else 0
+        ship_id = assigned_ship["id"] if assigned_ship else None
+
+        if efficiency >= 85 and ship_revenue > 0:
+            suggestion = "Optimal assignment"
+        elif efficiency >= 85 and ship_revenue == 0:
+            suggestion = "High-performing driver available for assignment"
+        elif efficiency < 70:
+            suggestion = "Consider shorter routes to improve metrics"
+        else:
+            suggestion = "Reassign to higher-value shipment"
+
+        driver_optimization.append({
+            "driver_id": d["id"],
+            "driver_name": d["name"],
+            "efficiency_score": efficiency,
+            "assigned_shipment_id": ship_id,
+            "shipment_revenue": ship_revenue,
+            "suggestion": suggestion,
+            "stats": {
+                "on_time_pct": stats["on_time_pct"],
+                "avg_rating": stats["avg_rating"],
+                "km_per_month": stats["km_per_month"],
+            },
+        })
+
+    driver_optimization.sort(key=lambda d: d["efficiency_score"], reverse=True)
+
+    # ── Reassignment Actions ──
+    reassignment_actions = []
+    assigned_drivers = [d for d in driver_optimization if d["assigned_shipment_id"]]
+    if len(assigned_drivers) >= 2:
+        best = max(assigned_drivers, key=lambda d: d["efficiency_score"])
+        worst = min(assigned_drivers, key=lambda d: d["efficiency_score"])
+        if (worst["shipment_revenue"] > best["shipment_revenue"]
+                and best["efficiency_score"] - worst["efficiency_score"] > 5):
+            reassignment_actions.append({
+                "action": "swap",
+                "from_driver": best["driver_name"],
+                "from_score": best["efficiency_score"],
+                "from_shipment": best["assigned_shipment_id"],
+                "from_revenue": best["shipment_revenue"],
+                "to_driver": worst["driver_name"],
+                "to_score": worst["efficiency_score"],
+                "to_shipment": worst["assigned_shipment_id"],
+                "to_revenue": worst["shipment_revenue"],
+                "reason": f"Higher-efficiency driver ({best['efficiency_score']}) should handle "
+                          f"higher-revenue shipment ({worst['shipment_revenue']:,.0f} SAR)",
+            })
+
+        # Check for more swap opportunities among remaining drivers
+        remaining = [d for d in assigned_drivers if d["driver_id"] not in (best["driver_id"], worst["driver_id"])]
+        high_eff = [d for d in remaining if d["efficiency_score"] >= 80]
+        low_eff = [d for d in remaining if d["efficiency_score"] < 80]
+        for h in high_eff:
+            for l in low_eff:
+                if (l["shipment_revenue"] > h["shipment_revenue"]
+                        and h["efficiency_score"] - l["efficiency_score"] > 8):
+                    reassignment_actions.append({
+                        "action": "swap",
+                        "from_driver": h["driver_name"],
+                        "from_score": h["efficiency_score"],
+                        "from_shipment": h["assigned_shipment_id"],
+                        "from_revenue": h["shipment_revenue"],
+                        "to_driver": l["driver_name"],
+                        "to_score": l["efficiency_score"],
+                        "to_shipment": l["assigned_shipment_id"],
+                        "to_revenue": l["shipment_revenue"],
+                        "reason": f"Efficiency mismatch: {h['driver_name']} ({h['efficiency_score']}) "
+                                  f"on low-value vs {l['driver_name']} ({l['efficiency_score']}) on high-value",
+                    })
+                    break
+            if len(reassignment_actions) >= 3:
+                break
+
+    # ── Enhanced Recommendations ──
+    # 1. Cooled truck priority
     if cooled_shipments:
         cooled_available = sum(1 for t in comp_trucks if t["type"] == "Cooled" and t["status"] != "maintenance")
         if len(cooled_shipments) >= cooled_available:
@@ -577,7 +698,35 @@ def generate_fleet_recommendations(shipments, company_data, company_id):
                 "category": "fleet",
             })
 
-    # 2. Fleet utilization
+    # 2. Cooled truck revenue gap
+    if len(cooled_priority_table) >= 2:
+        top = cooled_priority_table[0]
+        bottom = cooled_priority_table[-1]
+        if bottom["assigned_driver"] != "Unassigned" and top["assigned_driver"] == "Unassigned":
+            recommendations.append({
+                "title": "Cooled Truck Revenue Gap",
+                "description": f"Low-revenue cooled shipment ({bottom['shipment_id']}, {bottom['revenue']:,.0f} SAR) "
+                               f"has a truck assigned while highest-revenue ({top['shipment_id']}, {top['revenue']:,.0f} SAR) is unserved.",
+                "impact": "High",
+                "estimated_savings": f"Recapture {top['revenue'] - bottom['revenue']:,.0f} SAR in priority revenue",
+                "category": "fleet",
+            })
+
+    # 3. Revenue at risk
+    at_risk_revenue = sum(s.get("estimated_revenue", 0) for s in comp_shipments
+                          if s["time_status"] in ("Delayed", "At Risk"))
+    if at_risk_revenue > 0:
+        at_risk_count = sum(1 for s in comp_shipments if s["time_status"] in ("Delayed", "At Risk"))
+        recommendations.append({
+            "title": "Revenue at Risk",
+            "description": f"{at_risk_count} shipments with Delayed/At Risk status represent "
+                           f"{at_risk_revenue:,.0f} SAR in jeopardized revenue. Prioritize recovery actions.",
+            "impact": "High",
+            "estimated_savings": f"Protect {at_risk_revenue:,.0f} SAR from penalties/losses",
+            "category": "fleet",
+        })
+
+    # 4. Fleet utilization
     idle_trucks = [t for t in comp_trucks if t["status"] == "available"]
     in_use = [t for t in comp_trucks if t["status"] == "in_use"]
     if idle_trucks and len(idle_trucks) >= 3:
@@ -590,7 +739,7 @@ def generate_fleet_recommendations(shipments, company_data, company_id):
             "category": "fleet",
         })
 
-    # 3. Driver efficiency
+    # 5. Driver efficiency
     if comp_drivers:
         low_perf = [d for d in comp_drivers if d["stats"]["on_time_pct"] < 80]
         if low_perf:
@@ -604,7 +753,7 @@ def generate_fleet_recommendations(shipments, company_data, company_id):
                 "category": "drivers",
             })
 
-    # 4. Revenue optimization
+    # 6. Long-haul route optimization
     if comp_shipments:
         shipments_with_dist = [(s, s["route"]["distance_km"]) for s in comp_shipments if s["route"]["distance_km"] > 0]
         if shipments_with_dist:
@@ -620,7 +769,7 @@ def generate_fleet_recommendations(shipments, company_data, company_id):
                     "category": "routes",
                 })
 
-    # 5. Maintenance scheduling
+    # 7. Maintenance scheduling
     maint_trucks = [t for t in comp_trucks if t["status"] == "maintenance"]
     high_mileage = [t for t in comp_trucks if t["mileage_km"] > 150000 and t["status"] != "maintenance"]
     if high_mileage:
@@ -633,7 +782,6 @@ def generate_fleet_recommendations(shipments, company_data, company_id):
             "category": "fleet",
         })
 
-    # Always provide at least one recommendation
     if not recommendations:
         recommendations.append({
             "title": "Fleet Operating Optimally",
@@ -644,7 +792,12 @@ def generate_fleet_recommendations(shipments, company_data, company_id):
             "category": "general",
         })
 
-    return recommendations
+    return {
+        "recommendations": recommendations,
+        "cooled_priority_table": cooled_priority_table,
+        "driver_optimization": driver_optimization,
+        "reassignment_actions": reassignment_actions,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════
