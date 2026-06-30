@@ -2801,7 +2801,7 @@ elif view_mode == "Planner":
             ("On-Time Rate", f"{_on_time_pct:.0f}%", "", "var(--blue)"),
             ("Unassigned", f"{len(_unassigned)}", "shipments", "var(--red)" if _unassigned else "var(--green)"),
         ]
-        for _ki, (_kl, _kv, _ku, _kc) in enumerate(zip(_kpi_cols, _kpi_data)):
+        for _ki, (_kl, _kv) in enumerate(zip(_kpi_cols, _kpi_data)):
             with _kl:
                 st.markdown(f"""
                 <div class="panel" style="text-align:center;padding:12px 8px;">
