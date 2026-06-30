@@ -997,14 +997,6 @@ st.markdown(f"""
 # SIDEBAR
 # ══════════════════════════════════════════════════════════════════
 
-# Sync radio widget key BEFORE it renders (avoids Streamlit widget-key conflict)
-if "view_mode_radio" not in st.session_state:
-    st.session_state.view_mode_radio = st.session_state.view_mode
-
-# If view_mode was changed by a button (not the radio), sync the radio key
-if st.session_state.view_mode != st.session_state.view_mode_radio:
-    st.session_state.view_mode_radio = st.session_state.view_mode
-
 view_mode = st.session_state.view_mode
 
 # Hide sidebar completely on the Home page
@@ -1017,17 +1009,11 @@ if view_mode == "Home":
     </style>
     """, unsafe_allow_html=True)
 
-def _on_view_change():
-    st.session_state.view_mode = st.session_state.view_mode_radio
-
 with st.sidebar:
-    view_mode = st.radio(
-        "View",
-        ["Home", "Macro", "Micro", "Planner"],
-        key="view_mode_radio",
-        horizontal=True,
-        on_change=_on_view_change,
-    )
+    if st.button("\u2302  Home", key="sidebar_home", use_container_width=True):
+        st.session_state.view_mode = "Home"
+        st.rerun()
+    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
     # ── Default filter/planner variables (always initialized) ──
     filter_ports = []
