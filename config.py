@@ -429,3 +429,39 @@ def get_precomputed_route(port_name, dest_name):
         "distance_km": round(road_km, 1),
         "duration_hrs": round(duration_hrs, 1),
     }
+
+
+# ── Region Map for Smart Location Search ──
+REGION_MAP = {
+    "Riyadh": "Central Region",
+    "Tabuk": "Northern Region",
+    "NEOM": "Northern Region",
+    "Hail": "Northern Region",
+    "Buraidah": "Qassim Region",
+    "Makkah": "Western Region",
+    "Madinah": "Western Region",
+    "Ta'if": "Western Region",
+    "Abha": "Southern Region",
+    "Najran": "Southern Region",
+    "Jazan": "Southern Region",
+    "Al Khobar": "Eastern Region",
+    "Jeddah Islamic Port": "Western Region",
+    "King Abdulaziz Port (Dammam)": "Eastern Region",
+    "Jubail Commercial Port": "Eastern Region",
+    "Yanbu Commercial Port": "Western Region",
+    "Ras Al-Khair Port": "Eastern Region",
+    "NEOM Port (Oxagon)": "Northern Region",
+}
+
+# ── Combined Location Search List (display_label -> metadata) ──
+ALL_LOCATIONS = {}
+for _name, _coords in PORTS.items():
+    _region = REGION_MAP.get(_name, "")
+    _label = f"{_name} — {_region}, Saudi Arabia" if _region else f"{_name} — Saudi Arabia"
+    ALL_LOCATIONS[_label] = {"key": _name, "coords": _coords, "type": "port"}
+for _name, _coords in ALL_DESTINATIONS.items():
+    _country = DEST_COUNTRY_MAP.get(_name, "Saudi Arabia")
+    _region = REGION_MAP.get(_name, "")
+    _tag = f"{_region}, {_country}" if _region else _country
+    _label = f"{_name} — {_tag}"
+    ALL_LOCATIONS[_label] = {"key": _name, "coords": _coords, "type": "city"}

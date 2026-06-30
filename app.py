@@ -17,7 +17,11 @@ def _now():
 from streamlit_folium import st_folium
 from streamlit_autorefresh import st_autorefresh
 
-from config import PORTS, ALL_DESTINATIONS, COLORS, DEST_COUNTRY_MAP, DEST_COUNTRIES, DEFAULT_COST_PARAMS, CARGO_TYPES
+from config import (
+    PORTS, ALL_DESTINATIONS, COLORS, DEST_COUNTRY_MAP, DEST_COUNTRIES,
+    DEFAULT_COST_PARAMS, CARGO_TYPES, ALL_LOCATIONS, COOLED_CARGO,
+    CARGO_REVENUE_MAP, PRIORITY_REVENUE_MULTIPLIER, get_precomputed_route,
+)
 from map_utils import (
     create_base_map,
     add_port_markers,
@@ -914,9 +918,7 @@ with st.sidebar:
     )
     st.session_state.view_mode = view_mode
 
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-
-    # ── Macro Filters ──
+    # ── Default filter/planner variables (always initialized) ──
     filter_ports = []
     filter_country = []
     filter_city = []
@@ -949,6 +951,9 @@ with st.sidebar:
     plan_max_drive_hrs = 10.0
     plan_loading_hrs = 2.0
     plan_multi_load = True
+
+    if view_mode != "Home":
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
     if view_mode == "Macro":
         st.markdown("""
@@ -1021,7 +1026,7 @@ with st.sidebar:
             st.session_state.cost_params["cooled_surcharge_per_km"] = st.slider(
                 "Cooled Surcharge (SAR/km)", 0.05, 0.50, st.session_state.cost_params["cooled_surcharge_per_km"], 0.05, key="micro_cooled")
 
-    else:
+    elif view_mode == "Planner":
         # ── Planner — Decision Parameters ──
         st.markdown("""
         <div style="padding:4px 0 12px 0;">
@@ -1081,21 +1086,122 @@ with st.sidebar:
             plan_multi_load = st.toggle("Allow Multi-Load", value=True, key="plan_multi_load",
                                         help="Let drivers handle sequential deliveries")
 
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-    st.markdown(
-        f'<div style="font-size:0.72rem;color:var(--text-2);padding:4px 0;">Last refresh &mdash; {st.session_state.last_refresh.strftime("%H:%M:%S")}</div>',
-        unsafe_allow_html=True,
-    )
-    if st.button("Refresh Data", type="primary", use_container_width=True):
-        st.session_state.shipments = generate_shipments(42)
-        st.session_state.company_data = None
-        st.session_state.analytics_data = None
-        st.session_state.last_refresh = _now()
-        st.rerun()
-    st.markdown(
-        '<div style="font-size:0.68rem;color:var(--text-2);margin-top:6px;">Data auto-refreshes every hour.</div>',
-        unsafe_allow_html=True,
-    )
+        # ── Add New Order ──
+        with st.expander("Add New Order", expanded=False):
+            st.markdown('<div style="font-size:0.72rem;color:var(--text-2);margin-bottom:8px;">Add a manual order to the dispatch queue</div>', unsafe_allow_html=True)
+            _loc_labels = sorted(ALL_LOCATIONS.keys())
+
+            # Origin — ports first, then cities
+            _origin_labels = [l for l in _loc_labels if ALL_LOCATIONS[l]["type"] == "port"] + \
+                             [l for l in _loc_labels if ALL_LOCATIONS[l]["type"] == "city"]
+            new_origin = st.selectbox("Origin (type to search)", _origin_labels, key="new_order_origin")
+
+            # Destination — cities first, then ports
+            _dest_labels = [l for l in _loc_labels if ALL_LOCATIONS[l]["type"] == "city"] + \
+                           [l for l in _loc_labels if ALL_LOCATIONS[l]["type"] == "port"]
+            new_dest = st.selectbox("Destination (type to search)", _dest_labels, key="new_order_dest")
+
+            new_cargo = st.selectbox("Cargo Type", CARGO_TYPES, key="new_order_cargo")
+            new_priority = st.selectbox("Priority", ["Standard", "High", "Critical"], key="new_order_priority")
+            new_deadline_date = st.date_input("Deadline Date", value=_now().date() + timedelta(days=2), key="new_order_deadline_date")
+            new_deadline_time = st.time_input("Deadline Time", value=datetime.strptime("18:00", "%H:%M").time(), key="new_order_deadline_time")
+            new_customer = st.text_input("Customer Name", placeholder="e.g. ARAMCO", key="new_order_customer")
+
+            if st.button("Add to Dispatch Queue", key="btn_add_order", use_container_width=True):
+                # Resolve origin/destination keys and coords
+                _o_meta = ALL_LOCATIONS[new_origin]
+                _d_meta = ALL_LOCATIONS[new_dest]
+                _o_key = _o_meta["key"]
+                _d_key = _d_meta["key"]
+
+                # Determine port (origin must be a port for route lookup)
+                _port_name = _o_key if _o_key in PORTS else list(PORTS.keys())[0]
+                _dest_name = _d_key if _d_key in ALL_DESTINATIONS else list(ALL_DESTINATIONS.keys())[0]
+
+                # Get route
+                _route = get_precomputed_route(_port_name, _dest_name)
+
+                # Build deadline datetime
+                _deadline = datetime.combine(new_deadline_date, new_deadline_time).replace(tzinfo=_TZ_SA)
+                _drive_hrs = _route["duration_hrs"]
+                _truck_dispatch = _now() + timedelta(hours=2)  # assume 2h loading
+                _truck_eta = _truck_dispatch + timedelta(hours=_drive_hrs)
+                _buffer_hrs = (_deadline - _truck_eta).total_seconds() / 3600
+
+                # Revenue estimate
+                _base_rev = CARGO_REVENUE_MAP.get(new_cargo, 6000)
+                _rev_mult = PRIORITY_REVENUE_MULTIPLIER.get(new_priority, 1.0)
+                _revenue = round(_base_rev * _rev_mult * (_route["distance_km"] / 500), 2)
+
+                # Truck type
+                _truck_type = "Cooled" if new_cargo in COOLED_CARGO else "Regular"
+
+                # Time status
+                if _buffer_hrs > 4:
+                    _time_status = "On Time"
+                elif _buffer_hrs > 0:
+                    _time_status = "At Risk"
+                else:
+                    _time_status = "Delayed"
+
+                # Generate order ref from company prefix
+                _comp_lookup = {c["id"]: c for c in COMPANIES}
+                _prefix = _comp_lookup.get(planner_company, {}).get("order_prefix", "ORD")
+                _seq = len(st.session_state.shipments) + 1
+                _order_ref = f"ORD-{_prefix}-2026-{_seq:04d}"
+
+                _new_shipment = {
+                    "id": f"SHP-NEW-{_seq:04d}",
+                    "company_id": planner_company,
+                    "vessel": "Manual Entry",
+                    "port": _port_name,
+                    "destination": _dest_name,
+                    "cargo": new_cargo,
+                    "priority": new_priority,
+                    "truck_type": _truck_type,
+                    "estimated_revenue": _revenue,
+                    "vessel_arrival": _now() - timedelta(hours=1),
+                    "truck_dispatch": _truck_dispatch,
+                    "deadline": _deadline,
+                    "truck_eta": _truck_eta,
+                    "status": "At Port",
+                    "progress": 0,
+                    "time_status": _time_status,
+                    "port_coords": PORTS.get(_port_name, _o_meta["coords"]),
+                    "dest_coords": ALL_DESTINATIONS.get(_dest_name, _d_meta["coords"]),
+                    "route": _route,
+                    "order_ref": _order_ref,
+                    "customer_name": new_customer or "Manual",
+                    "recommendation": {
+                        "optimal_dispatch": _deadline - timedelta(hours=_drive_hrs + 2),
+                        "latest_dispatch": _deadline - timedelta(hours=_drive_hrs),
+                        "dispatch_verdict": "Optimal",
+                        "buffer_hrs": round(_buffer_hrs, 1),
+                        "recovery_action": None,
+                    },
+                }
+
+                st.session_state.shipments.append(_new_shipment)
+                st.session_state.company_data = None  # force regeneration
+                st.toast(f"Order {_order_ref} added to dispatch queue")
+                st.rerun()
+
+    if view_mode != "Home":
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="font-size:0.72rem;color:var(--text-2);padding:4px 0;">Last refresh &mdash; {st.session_state.last_refresh.strftime("%H:%M:%S")}</div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("Refresh Data", type="primary", use_container_width=True):
+            st.session_state.shipments = generate_shipments(42)
+            st.session_state.company_data = None
+            st.session_state.analytics_data = None
+            st.session_state.last_refresh = _now()
+            st.rerun()
+        st.markdown(
+            '<div style="font-size:0.68rem;color:var(--text-2);margin-top:6px;">Data auto-refreshes every hour.</div>',
+            unsafe_allow_html=True,
+        )
 
 # ══════════════════════════════════════════════════════════════════
 # APPLY FILTERS (for Macro)
@@ -1203,45 +1309,6 @@ if view_mode == "Home":
             st.session_state.view_mode = "Planner"
             st.rerun()
 
-    # Quick stats bar
-    st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
-    st.markdown('<div class="sec-title">Platform Overview</div>', unsafe_allow_html=True)
-
-    _home_kpi_cols = st.columns(5)
-    _home_kpi = [
-        ("Active Shipments", f'{f_summary["total"]}', "var(--accent)"),
-        ("In Transit", f'{f_summary["in_transit"]}', "var(--blue)"),
-        ("On Time", f'{f_summary["on_time"]}', "var(--green)"),
-        ("At Risk", f'{f_summary["at_risk"]}', "var(--amber)"),
-        ("Delayed", f'{f_summary["delayed"]}', "var(--red)"),
-    ]
-    for _hcol, (_hl, _hv, _hc) in zip(_home_kpi_cols, _home_kpi):
-        with _hcol:
-            st.markdown(f"""
-            <div class="panel" style="text-align:center;">
-                <div style="font-size:0.68rem;color:var(--text-2);text-transform:uppercase;letter-spacing:1px;">{_hl}</div>
-                <div style="font-size:1.6rem;font-weight:800;color:{_hc};">{_hv}</div>
-            </div>""", unsafe_allow_html=True)
-
-    # Companies overview
-    st.markdown('<div class="sec-title">Registered Companies</div>', unsafe_allow_html=True)
-    _comp_cols = st.columns(3)
-    for _ci, _comp in enumerate(company_data["companies"]):
-        with _comp_cols[_ci % 3]:
-            _comp_shps = len([s for s in shipments if s.get("company_id") == _comp["id"]])
-            _comp_drvs = len(company_data["drivers"].get(_comp["id"], []))
-            _comp_trks = len(company_data["trucks"].get(_comp["id"], []))
-            st.markdown(f"""
-            <div class="panel" style="margin-bottom:10px;">
-                <div style="font-weight:700;color:var(--text-0);margin-bottom:4px;">{_comp["name"]}</div>
-                <div style="font-size:0.78rem;color:var(--text-2);margin-bottom:8px;">{_comp.get("specialization", "")} &bull; {_comp["hq_city"]}</div>
-                <div style="display:flex;gap:16px;font-size:0.78rem;">
-                    <span style="color:var(--accent);">{_comp_shps} orders</span>
-                    <span style="color:var(--text-1);">{_comp_drvs} drivers</span>
-                    <span style="color:var(--text-1);">{_comp_trks} trucks</span>
-                    <span style="color:var(--text-2);">{_comp.get("erp_system", "")}</span>
-                </div>
-            </div>""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════
 # VIEW: MACRO or MICRO (controlled by sidebar)
@@ -2392,7 +2459,6 @@ elif view_mode == "Micro":
 # ══════════════════════════════════════════════════════════════════
 elif view_mode == "Planner":
     from routing import calculate_cost as _plan_calc_cost
-    from config import COOLED_CARGO, CARGO_REVENUE_MAP, PRIORITY_REVENUE_MULTIPLIER
 
     _plan_company = next(c for c in company_data["companies"] if c["id"] == planner_company)
     _plan_drivers = [dict(d) for d in company_data["drivers"].get(planner_company, [])]
