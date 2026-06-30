@@ -997,7 +997,14 @@ st.markdown(f"""
 # SIDEBAR
 # ══════════════════════════════════════════════════════════════════
 
-# Resolve view_mode before sidebar so we can hide the panel entirely on Home
+# Sync radio widget key BEFORE it renders (avoids Streamlit widget-key conflict)
+if "view_mode_radio" not in st.session_state:
+    st.session_state.view_mode_radio = st.session_state.view_mode
+
+# If view_mode was changed by a button (not the radio), sync the radio key
+if st.session_state.view_mode != st.session_state.view_mode_radio:
+    st.session_state.view_mode_radio = st.session_state.view_mode
+
 view_mode = st.session_state.view_mode
 
 # Hide sidebar completely on the Home page
@@ -1010,18 +1017,17 @@ if view_mode == "Home":
     </style>
     """, unsafe_allow_html=True)
 
+def _on_view_change():
+    st.session_state.view_mode = st.session_state.view_mode_radio
+
 with st.sidebar:
-    # View selector (only rendered when sidebar is visible, i.e. not Home)
-    _view_options = ["Home", "Macro", "Micro", "Planner"]
-    _view_idx = _view_options.index(st.session_state.view_mode) if st.session_state.view_mode in _view_options else 0
     view_mode = st.radio(
         "View",
-        _view_options,
-        index=_view_idx,
-        horizontal=True,
+        ["Home", "Macro", "Micro", "Planner"],
         key="view_mode_radio",
+        horizontal=True,
+        on_change=_on_view_change,
     )
-    st.session_state.view_mode = view_mode
 
     # ── Default filter/planner variables (always initialized) ──
     filter_ports = []
@@ -1370,7 +1376,6 @@ if view_mode == "Home":
         """, unsafe_allow_html=True)
         if st.button("Open Macro Dashboard", key="home_macro", use_container_width=True):
             st.session_state.view_mode = "Macro"
-            st.session_state.view_mode_radio = "Macro"
             st.rerun()
 
     with _home_cols[1]:
@@ -1392,7 +1397,6 @@ if view_mode == "Home":
         """, unsafe_allow_html=True)
         if st.button("Open Micro Dashboard", key="home_micro", use_container_width=True):
             st.session_state.view_mode = "Micro"
-            st.session_state.view_mode_radio = "Micro"
             st.rerun()
 
     with _home_cols[2]:
@@ -1414,7 +1418,6 @@ if view_mode == "Home":
         """, unsafe_allow_html=True)
         if st.button("Open Shipment Planner", key="home_planner", use_container_width=True):
             st.session_state.view_mode = "Planner"
-            st.session_state.view_mode_radio = "Planner"
             st.rerun()
 
 
