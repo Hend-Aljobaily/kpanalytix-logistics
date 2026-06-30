@@ -588,7 +588,7 @@ if "company_data" not in st.session_state:
 if "analytics_data" not in st.session_state:
     st.session_state.analytics_data = None
 if "view_mode" not in st.session_state:
-    st.session_state.view_mode = "Macro"
+    st.session_state.view_mode = "Home"
 if "cost_params" not in st.session_state:
     st.session_state.cost_params = dict(DEFAULT_COST_PARAMS)
 st.session_state.dashboard_focus = "Overview"
@@ -903,7 +903,7 @@ st.markdown(f"""
 # ══════════════════════════════════════════════════════════════════
 with st.sidebar:
     # View selector
-    _view_options = ["Macro", "Micro", "Planner"]
+    _view_options = ["Home", "Macro", "Micro", "Planner"]
     _view_idx = _view_options.index(st.session_state.view_mode) if st.session_state.view_mode in _view_options else 0
     view_mode = st.radio(
         "View",
@@ -937,6 +937,18 @@ with st.sidebar:
     planner_priority = None
     planner_deadline_date = None
     planner_deadline_time = None
+    planner_focus = "Balanced"
+    w_urgency = 70
+    w_revenue = 60
+    w_priority = 80
+    w_perishable = 50
+    w_ontime = 40
+    plan_base_margin = 15
+    plan_urgency_premium = True
+    plan_profit_floor = 0
+    plan_max_drive_hrs = 10.0
+    plan_loading_hrs = 2.0
+    plan_multi_load = True
 
     if view_mode == "Macro":
         st.markdown("""
@@ -1010,11 +1022,11 @@ with st.sidebar:
                 "Cooled Surcharge (SAR/km)", 0.05, 0.50, st.session_state.cost_params["cooled_surcharge_per_km"], 0.05, key="micro_cooled")
 
     else:
-        # ── Planner Inputs ──
+        # ── Planner — Decision Parameters ──
         st.markdown("""
         <div style="padding:4px 0 12px 0;">
             <div style="font-size:0.92rem;font-weight:700;color:var(--text-0);margin-bottom:2px;">Shipment Planner</div>
-            <div style="font-size:0.72rem;color:var(--text-2);">Plan a new shipment delivery</div>
+            <div style="font-size:0.72rem;color:var(--text-2);">Auto-optimize dispatch for all pending shipments</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1026,15 +1038,30 @@ with st.sidebar:
             format_func=lambda x: _plan_company_names[x],
             key="planner_company",
         )
-        planner_origin = st.selectbox("Origin Port", list(PORTS.keys()), key="planner_origin")
-        planner_dest = st.selectbox("Destination", sorted(ALL_DESTINATIONS.keys()), key="planner_dest")
-        planner_cargo = st.selectbox("Cargo Type", CARGO_TYPES, key="planner_cargo")
-        planner_priority = st.selectbox("Priority", ["Standard", "High", "Critical"], key="planner_priority")
 
-        st.markdown('<div style="font-size:0.72rem;color:var(--text-2);margin:8px 0 4px 0;">Delivery Deadline</div>', unsafe_allow_html=True)
-        planner_deadline_date = st.date_input("Date", value=_now().date() + timedelta(days=2), key="planner_deadline_date")
-        planner_deadline_time = st.time_input("Time", value=datetime.strptime("18:00", "%H:%M").time(), key="planner_deadline_time")
+        # ── Company Focus ──
+        st.markdown('<div style="font-size:0.72rem;color:var(--text-2);margin:12px 0 4px 0;text-transform:uppercase;letter-spacing:0.5px;">Company Focus</div>', unsafe_allow_html=True)
+        _focus_options = ["Balanced", "Profit Maximization", "Reputation (On-Time)"]
+        planner_focus = st.select_slider("Focus", options=_focus_options, value="Balanced", key="planner_focus")
 
+        # ── Decision Weights ──
+        st.markdown('<div style="font-size:0.72rem;color:var(--text-2);margin:12px 0 4px 0;text-transform:uppercase;letter-spacing:0.5px;">Decision Weights</div>', unsafe_allow_html=True)
+        w_urgency = st.slider("Time Urgency", 0, 100, 70 if planner_focus != "Profit Maximization" else 40, 5, key="plan_w_urgency")
+        w_revenue = st.slider("Revenue Value", 0, 100, 80 if planner_focus == "Profit Maximization" else 60, 5, key="plan_w_revenue")
+        w_priority = st.slider("Priority Level", 0, 100, 90 if planner_focus == "Reputation (On-Time)" else 80, 5, key="plan_w_priority")
+        w_perishable = st.slider("Perishability", 0, 100, 50, 5, key="plan_w_perishable")
+        w_ontime = st.slider("On-Time Bonus", 0, 100, 90 if planner_focus == "Reputation (On-Time)" else 40, 5, key="plan_w_ontime",
+                             help="Extra weight for shipments close to deadline — prioritize reputation")
+
+        # ── Pricing Parameters ──
+        st.markdown('<div style="font-size:0.72rem;color:var(--text-2);margin:12px 0 4px 0;text-transform:uppercase;letter-spacing:0.5px;">Pricing</div>', unsafe_allow_html=True)
+        plan_base_margin = st.slider("Base Margin %", 5, 40, 15 if planner_focus != "Profit Maximization" else 25, 1, key="plan_base_margin")
+        plan_urgency_premium = st.toggle("Urgency Premium", value=True if planner_focus != "Reputation (On-Time)" else False, key="plan_urgency_premium",
+                                         help="Dynamic pricing multiplier based on deadline buffer")
+        plan_profit_floor = st.slider("Min Profit (SAR)", 0, 5000, 500 if planner_focus == "Profit Maximization" else 0, 100, key="plan_profit_floor",
+                                      help="Reject shipments below this profit threshold")
+
+        # ── Cost Parameters ──
         with st.expander("Cost Parameters", expanded=False):
             st.session_state.cost_params["fuel_cost_per_km"] = st.slider(
                 "Fuel Cost (SAR/km)", 0.20, 1.00, st.session_state.cost_params["fuel_cost_per_km"], 0.05, key="plan_fuel")
@@ -1046,6 +1073,13 @@ with st.sidebar:
                 "Toll Rate (SAR)", 0.0, 150.0, st.session_state.cost_params["toll_flat_rate"], 10.0, key="plan_toll")
             st.session_state.cost_params["cooled_surcharge_per_km"] = st.slider(
                 "Cooled Surcharge (SAR/km)", 0.05, 0.50, st.session_state.cost_params["cooled_surcharge_per_km"], 0.05, key="plan_cooled")
+
+        # ── Dispatch Constraints ──
+        with st.expander("Dispatch Constraints", expanded=False):
+            plan_max_drive_hrs = st.slider("Max Drive Hours/Driver", 4.0, 14.0, 10.0, 0.5, key="plan_max_drive")
+            plan_loading_hrs = st.slider("Loading/Prep Time (hrs)", 0.5, 4.0, 2.0, 0.5, key="plan_loading_hrs")
+            plan_multi_load = st.toggle("Allow Multi-Load", value=True, key="plan_multi_load",
+                                        help="Let drivers handle sequential deliveries")
 
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     st.markdown(
@@ -1094,9 +1128,125 @@ if _maf:
 f_summary = get_shipment_summary(filtered)
 
 # ══════════════════════════════════════════════════════════════════
+# VIEW: HOME — Solution Selection Landing Page
+# ══════════════════════════════════════════════════════════════════
+if view_mode == "Home":
+    st.markdown("""
+    <div style="text-align:center;padding:40px 0 20px 0;">
+        <div style="font-size:2rem;font-weight:800;color:var(--text-0);letter-spacing:-0.5px;">Logistics Optimizer</div>
+        <div style="font-size:0.95rem;color:var(--text-2);margin-top:6px;">Automated Operations Center &mdash; Select a solution to get started</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    _home_cols = st.columns(3, gap="large")
+
+    with _home_cols[0]:
+        st.markdown("""
+        <div class="panel" style="text-align:center;padding:32px 20px;min-height:320px;display:flex;flex-direction:column;justify-content:space-between;">
+            <div>
+                <div style="font-size:2.5rem;margin-bottom:12px;">&#127758;</div>
+                <div style="font-size:1.15rem;font-weight:800;color:var(--text-0);margin-bottom:6px;">Macro Dashboard</div>
+                <div style="font-size:0.75rem;color:var(--accent);font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">National Operations View</div>
+                <div style="font-size:0.82rem;color:var(--text-1);line-height:1.6;">
+                    Government-level shipment intelligence across all ports, routes, and companies.
+                    Real-time KPIs, delay analytics, port throughput, and national fleet monitoring.
+                </div>
+            </div>
+            <div style="margin-top:16px;">
+                <div style="font-size:0.72rem;color:var(--text-2);margin-bottom:8px;">Best for: Ministry of Transport, Customs Authority, Regulatory Bodies</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Open Macro Dashboard", key="home_macro", use_container_width=True):
+            st.session_state.view_mode = "Macro"
+            st.rerun()
+
+    with _home_cols[1]:
+        st.markdown("""
+        <div class="panel" style="text-align:center;padding:32px 20px;min-height:320px;display:flex;flex-direction:column;justify-content:space-between;">
+            <div>
+                <div style="font-size:2.5rem;margin-bottom:12px;">&#128666;</div>
+                <div style="font-size:1.15rem;font-weight:800;color:var(--text-0);margin-bottom:6px;">Micro Dashboard</div>
+                <div style="font-size:0.75rem;color:var(--blue);font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">Company Fleet Monitoring</div>
+                <div style="font-size:0.82rem;color:var(--text-1);line-height:1.6;">
+                    Per-company live monitoring of trucks, drivers, shipments, and delivery performance.
+                    Track individual shipments, driver efficiency, and fleet utilization.
+                </div>
+            </div>
+            <div style="margin-top:16px;">
+                <div style="font-size:0.72rem;color:var(--text-2);margin-bottom:8px;">Best for: Fleet Managers, Logistics Coordinators, Operations Teams</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Open Micro Dashboard", key="home_micro", use_container_width=True):
+            st.session_state.view_mode = "Micro"
+            st.rerun()
+
+    with _home_cols[2]:
+        st.markdown("""
+        <div class="panel" style="text-align:center;padding:32px 20px;min-height:320px;display:flex;flex-direction:column;justify-content:space-between;">
+            <div>
+                <div style="font-size:2.5rem;margin-bottom:12px;">&#9881;</div>
+                <div style="font-size:1.15rem;font-weight:800;color:var(--text-0);margin-bottom:6px;">Shipment Planner</div>
+                <div style="font-size:0.75rem;color:var(--green);font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">Dispatch Optimization Engine</div>
+                <div style="font-size:0.82rem;color:var(--text-1);line-height:1.6;">
+                    AI-driven dispatch planner that ranks all pending orders by criticality,
+                    auto-assigns trucks &amp; drivers, computes dynamic pricing, and recommends hiring.
+                </div>
+            </div>
+            <div style="margin-top:16px;">
+                <div style="font-size:0.72rem;color:var(--text-2);margin-bottom:8px;">Best for: Dispatch Managers, Pricing Analysts, Capacity Planners</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Open Shipment Planner", key="home_planner", use_container_width=True):
+            st.session_state.view_mode = "Planner"
+            st.rerun()
+
+    # Quick stats bar
+    st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
+    st.markdown('<div class="sec-title">Platform Overview</div>', unsafe_allow_html=True)
+
+    _home_kpi_cols = st.columns(5)
+    _home_kpi = [
+        ("Active Shipments", f'{f_summary["total"]}', "var(--accent)"),
+        ("In Transit", f'{f_summary["in_transit"]}', "var(--blue)"),
+        ("On Time", f'{f_summary["on_time"]}', "var(--green)"),
+        ("At Risk", f'{f_summary["at_risk"]}', "var(--amber)"),
+        ("Delayed", f'{f_summary["delayed"]}', "var(--red)"),
+    ]
+    for _hcol, (_hl, _hv, _hc) in zip(_home_kpi_cols, _home_kpi):
+        with _hcol:
+            st.markdown(f"""
+            <div class="panel" style="text-align:center;">
+                <div style="font-size:0.68rem;color:var(--text-2);text-transform:uppercase;letter-spacing:1px;">{_hl}</div>
+                <div style="font-size:1.6rem;font-weight:800;color:{_hc};">{_hv}</div>
+            </div>""", unsafe_allow_html=True)
+
+    # Companies overview
+    st.markdown('<div class="sec-title">Registered Companies</div>', unsafe_allow_html=True)
+    _comp_cols = st.columns(3)
+    for _ci, _comp in enumerate(company_data["companies"]):
+        with _comp_cols[_ci % 3]:
+            _comp_shps = len([s for s in shipments if s.get("company_id") == _comp["id"]])
+            _comp_drvs = len(company_data["drivers"].get(_comp["id"], []))
+            _comp_trks = len(company_data["trucks"].get(_comp["id"], []))
+            st.markdown(f"""
+            <div class="panel" style="margin-bottom:10px;">
+                <div style="font-weight:700;color:var(--text-0);margin-bottom:4px;">{_comp["name"]}</div>
+                <div style="font-size:0.78rem;color:var(--text-2);margin-bottom:8px;">{_comp.get("specialization", "")} &bull; {_comp["hq_city"]}</div>
+                <div style="display:flex;gap:16px;font-size:0.78rem;">
+                    <span style="color:var(--accent);">{_comp_shps} orders</span>
+                    <span style="color:var(--text-1);">{_comp_drvs} drivers</span>
+                    <span style="color:var(--text-1);">{_comp_trks} trucks</span>
+                    <span style="color:var(--text-2);">{_comp.get("erp_system", "")}</span>
+                </div>
+            </div>""", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════
 # VIEW: MACRO or MICRO (controlled by sidebar)
 # ══════════════════════════════════════════════════════════════════
-if view_mode == "Macro":
+elif view_mode == "Macro":
     pct_on_time = round(f_summary["on_time"] / f_summary["total"] * 100) if f_summary["total"] else 0
 
     # Active KPI filter indicator
@@ -2238,447 +2388,592 @@ elif view_mode == "Micro":
             )
 
 # ══════════════════════════════════════════════════════════════════
-# PLANNER VIEW — Shipment Planning & Pricing Tool
+# PLANNER VIEW — Time-Critical Multi-Shipment Optimizer
 # ══════════════════════════════════════════════════════════════════
 elif view_mode == "Planner":
-    from routing import get_route_alternatives as _plan_get_alts, get_route as _plan_get_route, calculate_cost as _plan_calc_cost
+    from routing import calculate_cost as _plan_calc_cost
     from config import COOLED_CARGO, CARGO_REVENUE_MAP, PRIORITY_REVENUE_MULTIPLIER
 
     _plan_company = next(c for c in company_data["companies"] if c["id"] == planner_company)
-    _plan_drivers = company_data["drivers"].get(planner_company, [])
-    _plan_trucks = company_data["trucks"].get(planner_company, [])
+    _plan_drivers = [dict(d) for d in company_data["drivers"].get(planner_company, [])]
+    _plan_trucks = [dict(t) for t in company_data["trucks"].get(planner_company, [])]
+    _cost_params = dict(st.session_state.cost_params)
 
-    # Determine truck type needed
-    _needs_cooled = planner_cargo in COOLED_CARGO
-    _truck_type = "Cooled" if _needs_cooled else "Regular"
+    # ── Gather all non-delivered shipments for this company ──
+    _comp_shipments = [
+        s for s in shipments
+        if s.get("company_id") == planner_company and s.get("status") != "Delivered"
+    ]
 
-    # Build deadline datetime
-    _plan_deadline = datetime.combine(planner_deadline_date, planner_deadline_time)
+    _now_dt = _now()
 
-    # Header
+    # ── Focus label & icon ──
+    _focus_icon = {"Balanced": "&#9878;", "Profit Maximization": "&#9733;", "Reputation (On-Time)": "&#9201;"}.get(planner_focus, "&#9878;")
+    _focus_pill = {"Balanced": "pill-purple", "Profit Maximization": "pill-green", "Reputation (On-Time)": "pill-blue"}.get(planner_focus, "pill-purple")
+
+    # ── Header ──
     st.markdown(f"""
     <div class="company-header">
         <div>
-            <div class="ch-name">Shipment Planner</div>
-            <div class="ch-detail">{_plan_company["name"]} &bull; {planner_cargo} &bull; {planner_priority} Priority</div>
+            <div class="ch-name">Shipment Dispatch Planner</div>
+            <div class="ch-detail">{_plan_company["name"]} &bull; {_plan_company.get("specialization", "")} &bull; {len(_comp_shipments)} pending orders &bull; via {_plan_company.get("erp_system", "ERP")}</div>
         </div>
-        <div><span class="pill pill-purple">{_truck_type} Truck Required</span></div>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <span class="pill {_focus_pill}">{_focus_icon} {planner_focus}</span>
+            <span class="pill pill-purple">{len(_plan_drivers)} Drivers &bull; {len(_plan_trucks)} Trucks</span>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Get routes from OSRM
-    _plan_origin_coords = PORTS[planner_origin]
-    _plan_dest_coords = ALL_DESTINATIONS[planner_dest]
-    _plan_osrm = _plan_get_alts(
-        {"lat": _plan_origin_coords["lat"], "lon": _plan_origin_coords["lon"]},
-        {"lat": _plan_dest_coords["lat"], "lon": _plan_dest_coords["lon"]},
-        num_alternatives=3,
-    )
+    if not _comp_shipments:
+        st.markdown(
+            '<div class="panel" style="text-align:center;padding:40px;color:var(--text-2);">'
+            'No pending shipments for this company. All deliveries are complete.</div>',
+            unsafe_allow_html=True)
+    else:
+        # ══════════════════════════════════════════════════════════
+        # CRITICALITY SCORING ENGINE
+        # ══════════════════════════════════════════════════════════
+        _priority_factor_map = {"Critical": 100, "High": 60, "Standard": 30}
 
-    # Build route options
-    _plan_routes = []
-    if _plan_osrm:
-        for _ri, _r in enumerate(_plan_osrm):
-            _label = "Optimized" if _ri == 0 else f"Alternative {chr(65 + _ri)}"
-            _plan_routes.append({
-                "label": _label,
-                "geometry": _r["geometry"],
-                "distance_km": round(_r["distance_km"], 1),
-                "duration_hrs": round(_r["duration_hrs"], 1),
+        # Collect revenues for normalization
+        _all_revs = [s.get("estimated_revenue", 0) for s in _comp_shipments]
+        _min_rev = min(_all_revs) if _all_revs else 0
+        _max_rev = max(_all_revs) if _all_revs else 1
+        _rev_range = _max_rev - _min_rev if _max_rev > _min_rev else 1
+
+        # Max buffer for normalization (hrs)
+        _max_buffer = 48.0
+
+        _scored = []
+        for _s in _comp_shipments:
+            # Buffer hours
+            _deadline_dt = _s.get("deadline")
+            if _deadline_dt and hasattr(_deadline_dt, "replace"):
+                _deadline_naive = _deadline_dt.replace(tzinfo=None) if _deadline_dt.tzinfo else _deadline_dt
+            else:
+                _deadline_naive = _now_dt.replace(tzinfo=None) + timedelta(hours=24)
+            _now_naive = _now_dt.replace(tzinfo=None) if _now_dt.tzinfo else _now_dt
+
+            _route = _s.get("route", {})
+            _dur_hrs = _route.get("duration_hrs", 6)
+            _dist_km = _route.get("distance_km", 400)
+            _dispatch_time = _now_naive + timedelta(hours=plan_loading_hrs)
+            _eta = _dispatch_time + timedelta(hours=_dur_hrs)
+            _buffer_hrs = (_deadline_naive - _eta).total_seconds() / 3600
+
+            # Urgency factor: 0 (lots of buffer) to 100 (no buffer / late)
+            _urgency_f = max(0, min(100, (_max_buffer - _buffer_hrs) / _max_buffer * 100))
+
+            # Revenue factor
+            _est_rev = _s.get("estimated_revenue", 0)
+            _revenue_f = ((_est_rev - _min_rev) / _rev_range) * 100
+
+            # Priority factor
+            _priority_f = _priority_factor_map.get(_s.get("priority", "Standard"), 30)
+
+            # Perishable factor
+            _is_cooled = _s.get("cargo", "") in COOLED_CARGO
+            _perishable_f = 100 if _is_cooled else 0
+
+            # On-time reputation bonus: extra urgency for tight buffers
+            _ontime_f = max(0, min(100, (8 - _buffer_hrs) / 8 * 100)) if _buffer_hrs < 8 else 0
+
+            # Weighted average
+            _total_w = w_urgency + w_revenue + w_priority + w_perishable + w_ontime
+            if _total_w > 0:
+                _score = (
+                    _urgency_f * w_urgency
+                    + _revenue_f * w_revenue
+                    + _priority_f * w_priority
+                    + _perishable_f * w_perishable
+                    + _ontime_f * w_ontime
+                ) / _total_w
+            else:
+                _score = 50
+
+            # ── Dynamic Pricing ──
+            if plan_urgency_premium:
+                if _buffer_hrs < 0:
+                    _urg_mult = 1.50
+                elif _buffer_hrs < 2:
+                    _urg_mult = 1.35
+                elif _buffer_hrs < 4:
+                    _urg_mult = 1.25
+                elif _buffer_hrs < 8:
+                    _urg_mult = 1.15
+                else:
+                    _urg_mult = 1.0 + plan_base_margin / 100
+            else:
+                _urg_mult = 1.0 + plan_base_margin / 100
+
+            # Cost calculation
+            _base_cost = _plan_calc_cost(_dist_km, _dur_hrs, _cost_params)
+            _cooled_extra = _dist_km * _cost_params["cooled_surcharge_per_km"] if _is_cooled else 0
+            _total_cost = _base_cost["total"] + _cooled_extra
+            _price = round(_total_cost * _urg_mult, 2)
+            _profit = round(_price - _total_cost, 2)
+
+            _scored.append({
+                "shipment": _s,
+                "id": _s["id"],
+                "order_ref": _s.get("order_ref", ""),
+                "customer_ref": _s.get("customer_ref", ""),
+                "customer_name": _s.get("customer_name", ""),
+                "cargo": _s.get("cargo", "Unknown"),
+                "priority": _s.get("priority", "Standard"),
+                "origin": _s.get("port", "Unknown"),
+                "destination": _s.get("destination", "Unknown"),
+                "distance_km": _dist_km,
+                "duration_hrs": _dur_hrs,
+                "buffer_hrs": round(_buffer_hrs, 1),
+                "score": round(_score, 1),
+                "urgency_mult": round(_urg_mult, 2),
+                "cost": round(_total_cost, 2),
+                "price": _price,
+                "profit": _profit,
+                "est_revenue": _est_rev,
+                "is_cooled": _is_cooled,
+                "truck_type": "Cooled" if _is_cooled else "Regular",
+                "dispatch_time": _dispatch_time,
+                "eta": _eta,
+                "deadline": _deadline_naive,
+                "meets_deadline": _buffer_hrs >= 0,
+                "origin_coords": _s.get("port_coords", {}),
+                "dest_coords": _s.get("dest_coords", {}),
+                "route_geom": _route.get("waypoints", []),
+                "status": _s.get("status", "Unknown"),
+                # Individual factor scores for tooltip
+                "_urgency_f": round(_urgency_f, 1),
+                "_revenue_f": round(_revenue_f, 1),
+                "_priority_f": _priority_f,
+                "_perishable_f": _perishable_f,
+                "_ontime_f": round(_ontime_f, 1),
             })
-    else:
-        # Fallback to precomputed route
-        from config import get_precomputed_route as _plan_precomputed
-        _fb = _plan_precomputed(planner_origin, planner_dest)
-        _plan_routes.append({
-            "label": "Optimized",
-            "geometry": _fb["waypoints"],
-            "distance_km": _fb["distance_km"],
-            "duration_hrs": _fb["duration_hrs"],
-        })
 
-    # Compute costs for each route
-    _cost_params = dict(st.session_state.cost_params)
-    for _pr in _plan_routes:
-        _base_cost = _plan_calc_cost(_pr["distance_km"], _pr["duration_hrs"], _cost_params)
-        # Add cooled surcharge
-        _cooled_extra = _pr["distance_km"] * _cost_params["cooled_surcharge_per_km"] if _needs_cooled else 0
-        _total_cost = _base_cost["total"] + _cooled_extra
-        _pr["cost"] = {
-            "fuel": _base_cost["fuel"],
-            "driver": _base_cost["driver"],
-            "maintenance": _base_cost["maintenance"],
-            "toll": _base_cost["toll"],
-            "cooled_surcharge": round(_cooled_extra, 2),
-            "total": round(_total_cost, 2),
-        }
-        # Pricing recommendation
-        _margin_pct = {"Critical": 0.35, "High": 0.25, "Standard": 0.15}.get(planner_priority, 0.15)
-        _pr["recommended_price"] = round(_total_cost * (1 + _margin_pct), 2)
-        _pr["margin_pct"] = _margin_pct
-        # ETA
-        _pr["eta_hrs"] = _pr["duration_hrs"]
-        _now_dt = _now()
-        _dispatch = _now_dt + timedelta(hours=2)  # 2h for loading/prep
-        _pr["dispatch_time"] = _dispatch
-        _pr["arrival_time"] = _dispatch + timedelta(hours=_pr["duration_hrs"])
-        _pr["meets_deadline"] = _pr["arrival_time"].replace(tzinfo=None) <= _plan_deadline
+        # Sort by criticality score (highest first)
+        _scored.sort(key=lambda x: x["score"], reverse=True)
 
-    # Selected route (session state)
-    if "planner_sel_route" not in st.session_state:
-        st.session_state.planner_sel_route = 0
+        # ══════════════════════════════════════════════════════════
+        # TRUCK / DRIVER AUTO-ASSIGNMENT
+        # ══════════════════════════════════════════════════════════
+        _used_trucks = set()
+        _used_drivers = set()
+        _assigned = []
+        _unassigned = []
 
-    _sel_idx = st.session_state.planner_sel_route
-    if _sel_idx >= len(_plan_routes):
-        _sel_idx = 0
-    _sel_route = _plan_routes[_sel_idx]
+        # Score drivers for ranking
+        for _d in _plan_drivers:
+            _d["_eff_score"] = round(
+                _d["stats"]["on_time_pct"] * 0.4
+                + (_d["stats"]["avg_rating"] / 5) * 100 * 0.3
+                + min(100, _d["stats"]["km_per_month"] / 100) * 0.3, 1
+            )
 
-    # ── Route comparison cards ──
-    st.markdown('<div class="sec-title">Route Options</div>', unsafe_allow_html=True)
-    _route_cols = st.columns(len(_plan_routes))
-    for _ri, (_rcol, _ropt) in enumerate(zip(_route_cols, _plan_routes)):
-        with _rcol:
-            _rh = int(_ropt["duration_hrs"])
-            _rm = int((_ropt["duration_hrs"] % 1) * 60)
-            _is_sel = (_ri == _sel_idx)
-            _border_color = "#4285F4" if _is_sel else "var(--border)"
-            _bg = "rgba(66,133,244,0.08)" if _is_sel else "transparent"
-            _dot = "&#9679;" if _is_sel else "&#9675;"
-            _deadline_pill = "pill-green" if _ropt["meets_deadline"] else "pill-red"
-            _deadline_label = "Meets Deadline" if _ropt["meets_deadline"] else "Misses Deadline"
-            st.markdown(f"""
-            <div style="border:2px solid {_border_color};border-radius:var(--radius-lg);padding:16px;
-                        background:{_bg};text-align:center;">
-                <div style="font-size:0.9rem;font-weight:700;color:{'#4285F4' if _is_sel else 'var(--text-1)'};">
-                    {_dot} {_ropt["label"]}
-                </div>
-                <div style="font-size:1.4rem;font-weight:800;color:var(--text-0);margin:6px 0;">
-                    {_rh}h {_rm}m
-                </div>
-                <div style="font-size:0.82rem;color:var(--text-2);margin-bottom:6px;">
-                    {_ropt["distance_km"]:.0f} km
-                </div>
-                <div style="font-size:1.1rem;font-weight:700;color:var(--accent);margin-bottom:4px;">
-                    {_ropt["cost"]["total"]:,.0f} SAR
-                </div>
-                <div style="font-size:0.92rem;font-weight:700;color:var(--green);margin-bottom:4px;">
-                    Price: {_ropt["recommended_price"]:,.0f} SAR
-                </div>
-                <div><span class="pill {_deadline_pill}">{_deadline_label}</span></div>
-            </div>
-            """, unsafe_allow_html=True)
-            if st.button(
-                "Selected" if _is_sel else "Select",
-                key=f"plan_route_btn_{_ri}",
-                disabled=_is_sel,
-                use_container_width=True,
-            ):
-                st.session_state.planner_sel_route = _ri
-                st.rerun()
+        for _si, _item in enumerate(_scored):
+            # Find best truck: correct type, lowest mileage, not used
+            _cand_trucks = [
+                t for t in _plan_trucks
+                if t["id"] not in _used_trucks
+                and t["status"] != "maintenance"
+                and t["type"] == _item["truck_type"]
+            ]
+            if not _cand_trucks:
+                # Fallback: any available truck
+                _cand_trucks = [
+                    t for t in _plan_trucks
+                    if t["id"] not in _used_trucks and t["status"] != "maintenance"
+                ]
+            _sel_truck = min(_cand_trucks, key=lambda t: t["mileage_km"]) if _cand_trucks else None
 
-    # ── Route Map ──
-    st.markdown('<div class="sec-title">Route Map</div>', unsafe_allow_html=True)
-    _plan_map = create_base_map()
-    # Show only origin port and destination
-    add_port_markers(_plan_map, {planner_origin: _plan_origin_coords})
-    add_city_markers(_plan_map, {planner_dest: _plan_dest_coords})
+            # Find best driver: idle first, highest efficiency, not used
+            _cand_drivers = [
+                d for d in _plan_drivers
+                if d["id"] not in _used_drivers
+                and d["status"] != "off_duty"
+            ]
+            if not _cand_drivers:
+                _cand_drivers = [
+                    d for d in _plan_drivers
+                    if d["id"] not in _used_drivers
+                ]
+            _cand_drivers.sort(key=lambda d: d.get("_eff_score", 0), reverse=True)
+            _sel_driver = _cand_drivers[0] if _cand_drivers else None
 
-    # Draw all routes — selected in blue, others in grey
-    for _ri, _ropt in enumerate(_plan_routes):
-        _is_sel = (_ri == _sel_idx)
-        _color = "#4285F4" if _is_sel else "#9AA0A6"
-        _weight = 4 if _is_sel else 2
-        _opacity = 0.9 if _is_sel else 0.4
-        if _ropt["geometry"] and len(_ropt["geometry"]) >= 2:
-            folium.PolyLine(
-                locations=_ropt["geometry"],
-                color=_color,
-                weight=_weight,
-                opacity=_opacity,
-                tooltip=f'{_ropt["label"]} — {_ropt["distance_km"]:.0f} km — {_ropt["cost"]["total"]:,.0f} SAR',
-            ).add_to(_plan_map)
+            if _sel_truck and _sel_driver:
+                _used_trucks.add(_sel_truck["id"])
+                _used_drivers.add(_sel_driver["id"])
+                _item["assigned_truck"] = _sel_truck
+                _item["assigned_driver"] = _sel_driver
+                _item["rank"] = len(_assigned) + 1
+                _assigned.append(_item)
+            else:
+                _item["assigned_truck"] = None
+                _item["assigned_driver"] = None
+                _item["rank"] = None
+                _item["_missing_truck"] = _sel_truck is None
+                _item["_missing_driver"] = _sel_driver is None
+                _unassigned.append(_item)
 
-    # Fit bounds
-    _plan_all_pts = []
-    for _ropt in _plan_routes:
-        _plan_all_pts.extend(_ropt["geometry"])
-    if _plan_all_pts:
-        fit_map_bounds(_plan_map, _plan_all_pts)
+        # Profit-floor filter
+        _below_floor = [a for a in _assigned if a["profit"] < plan_profit_floor]
 
-    # Legend
-    st.markdown(
-        '<div style="display:flex;gap:16px;margin-bottom:8px;">'
-        '<span style="font-size:0.75rem;color:#4285F4;font-weight:600;">&#9473;&#9473; Selected Route</span>'
-        '<span style="font-size:0.75rem;color:#9AA0A6;font-weight:600;">&#9473;&#9473; Alternatives</span>'
-        '</div>', unsafe_allow_html=True,
-    )
-    _plan_map_data = st_folium(_plan_map, use_container_width=True, height=420,
-                               returned_objects=["last_object_clicked"], key="planner_map")
+        # ══════════════════════════════════════════════════════════
+        # 0. PRICING SUMMARY KPI STRIP
+        # ══════════════════════════════════════════════════════════
+        _total_revenue = sum(a["price"] for a in _assigned)
+        _total_cost = sum(a["cost"] for a in _assigned)
+        _total_margin = _total_revenue - _total_cost
+        _avg_mult = sum(a["urgency_mult"] for a in _assigned) / len(_assigned) if _assigned else 0
+        _on_time_count = sum(1 for a in _assigned if a["meets_deadline"])
+        _on_time_pct = (_on_time_count / len(_assigned) * 100) if _assigned else 0
 
-    # Click detection for route switching
-    if len(_plan_routes) > 1 and _plan_map_data and _plan_map_data.get("last_object_clicked"):
-        import math as _pmath
-        _pclick = _plan_map_data["last_object_clicked"]
-        _pclick_key = (round(_pclick["lat"], 5), round(_pclick["lng"], 5))
-        if _pclick_key != st.session_state.get("_planner_last_click"):
-            st.session_state["_planner_last_click"] = _pclick_key
-            _pbest_idx = _sel_idx
-            _pbest_dist = float("inf")
-            for _ri, _ropt in enumerate(_plan_routes):
-                for _pt in _ropt["geometry"][::50]:
-                    _pd = _pmath.sqrt((_pt[0] - _pclick["lat"])**2 + (_pt[1] - _pclick["lng"])**2)
-                    if _pd < _pbest_dist:
-                        _pbest_dist = _pd
-                        _pbest_idx = _ri
-            if _pbest_dist < 0.3 and _pbest_idx != _sel_idx:
-                st.session_state.planner_sel_route = _pbest_idx
-                st.rerun()
+        _margin_pct_total = (_total_margin / _total_cost * 100) if _total_cost > 0 else 0
+        _kpi_cols = st.columns(6)
+        _kpi_data = [
+            ("Your Cost", f"{_total_cost:,.0f}", "SAR", "var(--red)"),
+            ("Client Price", f"{_total_revenue:,.0f}", "SAR", "var(--green)"),
+            ("Your Profit", f"{_total_margin:,.0f}", "SAR", "var(--accent)"),
+            ("Margin %", f"{_margin_pct_total:.1f}%", "", "var(--amber)"),
+            ("On-Time Rate", f"{_on_time_pct:.0f}%", "", "var(--blue)"),
+            ("Unassigned", f"{len(_unassigned)}", "shipments", "var(--red)" if _unassigned else "var(--green)"),
+        ]
+        for _ki, (_kl, _kv, _ku, _kc) in enumerate(zip(_kpi_cols, _kpi_data)):
+            with _kl:
+                st.markdown(f"""
+                <div class="panel" style="text-align:center;padding:12px 8px;">
+                    <div style="font-size:0.68rem;color:var(--text-2);text-transform:uppercase;letter-spacing:1px;">{_kv[0]}</div>
+                    <div style="font-size:1.3rem;font-weight:800;color:{_kv[3]};">{_kv[1]} <span style="font-size:0.65rem;color:var(--text-2);">{_kv[2]}</span></div>
+                </div>""", unsafe_allow_html=True)
 
-    # ── Selected Route Detail ──
-    st.markdown('<div class="sec-title">Shipment Plan — Selected Route</div>', unsafe_allow_html=True)
+        # ══════════════════════════════════════════════════════════
+        # 1. DISPATCH PRIORITY RANKING TABLE
+        # ══════════════════════════════════════════════════════════
+        st.markdown('<div class="sec-title">Dispatch Priority Ranking</div>', unsafe_allow_html=True)
 
-    _sr = _sel_route
-    _sr_h = int(_sr["duration_hrs"])
-    _sr_m = int((_sr["duration_hrs"] % 1) * 60)
-    _dispatch_str = _sr["dispatch_time"].strftime("%b %d, %H:%M")
-    _arrival_str = _sr["arrival_time"].strftime("%b %d, %H:%M")
-    _deadline_str = _plan_deadline.strftime("%b %d, %H:%M")
-
-    st.markdown(f"""
-    <div class="panel">
-        <div class="detail-grid" style="grid-template-columns: repeat(6, 1fr);">
-            <div class="detail-card">
-                <div class="dc-label">Origin</div>
-                <div class="dc-value" style="font-size:0.85rem;">{planner_origin.split("(")[0].strip()}</div>
-            </div>
-            <div class="detail-card">
-                <div class="dc-label">Destination</div>
-                <div class="dc-value" style="font-size:0.85rem;">{planner_dest}</div>
-            </div>
-            <div class="detail-card">
-                <div class="dc-label">Distance</div>
-                <div class="dc-value">{_sr["distance_km"]:.0f} km</div>
-            </div>
-            <div class="detail-card">
-                <div class="dc-label">Drive Time</div>
-                <div class="dc-value">{_sr_h}h {_sr_m}m</div>
-            </div>
-            <div class="detail-card">
-                <div class="dc-label">ETA</div>
-                <div class="dc-value" style="font-size:0.85rem;">{_arrival_str}</div>
-            </div>
-            <div class="detail-card">
-                <div class="dc-label">Deadline</div>
-                <div class="dc-value" style="font-size:0.85rem;color:{'var(--green)' if _sr['meets_deadline'] else 'var(--red)'};">{_deadline_str}</div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # ── Cost Breakdown ──
-    st.markdown('<div class="sec-title">Cost Breakdown &amp; Pricing</div>', unsafe_allow_html=True)
-    _c = _sr["cost"]
-
-    _cost_items = [
-        ("Fuel", _c["fuel"], "var(--amber)"),
-        ("Driver", _c["driver"], "var(--accent)"),
-        ("Maintenance", _c["maintenance"], "var(--blue)"),
-        ("Tolls", _c["toll"], "var(--text-1)"),
-    ]
-    if _needs_cooled:
-        _cost_items.append(("Cooled Surcharge", _c["cooled_surcharge"], "var(--blue)"))
-
-    _cost_bar_html = ""
-    for _cl, _cv, _cc in _cost_items:
-        _pct = (_cv / _c["total"] * 100) if _c["total"] > 0 else 0
-        _cost_bar_html += (
-            f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">'
-            f'<div style="width:120px;font-size:0.78rem;color:var(--text-1);text-align:right;">{_cl}</div>'
-            f'<div style="flex:1;background:var(--bg-2);border-radius:4px;height:20px;overflow:hidden;">'
-            f'<div style="width:{_pct}%;height:100%;background:{_cc};border-radius:4px;"></div></div>'
-            f'<div style="width:80px;font-size:0.78rem;color:var(--text-0);font-weight:600;">{_cv:,.0f} SAR</div>'
-            f'</div>'
-        )
-
-    st.markdown(f'<div class="panel">{_cost_bar_html}</div>', unsafe_allow_html=True)
-
-    # Pricing summary
-    _price_cols = st.columns(3)
-    with _price_cols[0]:
-        st.markdown(f"""
-        <div class="panel" style="text-align:center;">
-            <div style="font-size:0.72rem;color:var(--text-1);text-transform:uppercase;letter-spacing:1px;">Total Cost</div>
-            <div style="font-size:1.5rem;font-weight:800;color:var(--red);">{_c["total"]:,.0f} <span style="font-size:0.7rem;">SAR</span></div>
-        </div>""", unsafe_allow_html=True)
-    with _price_cols[1]:
-        st.markdown(f"""
-        <div class="panel" style="text-align:center;">
-            <div style="font-size:0.72rem;color:var(--text-1);text-transform:uppercase;letter-spacing:1px;">Recommended Price</div>
-            <div style="font-size:1.5rem;font-weight:800;color:var(--green);">{_sr["recommended_price"]:,.0f} <span style="font-size:0.7rem;">SAR</span></div>
-        </div>""", unsafe_allow_html=True)
-    with _price_cols[2]:
-        st.markdown(f"""
-        <div class="panel" style="text-align:center;">
-            <div style="font-size:0.72rem;color:var(--text-1);text-transform:uppercase;letter-spacing:1px;">Margin ({_sr["margin_pct"]*100:.0f}%)</div>
-            <div style="font-size:1.5rem;font-weight:800;color:var(--accent);">{_sr["recommended_price"] - _c["total"]:,.0f} <span style="font-size:0.7rem;">SAR</span></div>
-        </div>""", unsafe_allow_html=True)
-
-    # ── All Routes Comparison Table ──
-    if len(_plan_routes) > 1:
-        st.markdown('<div class="sec-title">Route Comparison</div>', unsafe_allow_html=True)
-        _comp_header = """<div class="panel" style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
-        <thead><tr style="border-bottom:1px solid var(--border);">
-            <th style="padding:8px;text-align:left;color:var(--text-1);">Route</th>
-            <th style="padding:8px;text-align:right;color:var(--text-1);">Distance</th>
-            <th style="padding:8px;text-align:right;color:var(--text-1);">Duration</th>
-            <th style="padding:8px;text-align:right;color:var(--text-1);">Cost (SAR)</th>
-            <th style="padding:8px;text-align:right;color:var(--text-1);">Price (SAR)</th>
-            <th style="padding:8px;text-align:right;color:var(--text-1);">Margin (SAR)</th>
-            <th style="padding:8px;text-align:center;color:var(--text-1);">Deadline</th>
+        _table_header = """<div class="panel" style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.76rem;">
+        <thead><tr style="border-bottom:2px solid var(--border);">
+            <th style="padding:8px 6px;text-align:center;color:var(--text-2);width:40px;">Rank</th>
+            <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Order Ref</th>
+            <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Customer</th>
+            <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Cargo</th>
+            <th style="padding:8px 6px;text-align:center;color:var(--text-2);">Priority</th>
+            <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Route</th>
+            <th style="padding:8px 6px;text-align:right;color:var(--text-2);">Buffer</th>
+            <th style="padding:8px 6px;text-align:right;color:var(--text-2);">Score</th>
+            <th style="padding:8px 6px;text-align:right;color:var(--text-2);">Your Cost</th>
+            <th style="padding:8px 6px;text-align:right;color:var(--text-2);">Client Price</th>
+            <th style="padding:8px 6px;text-align:right;color:var(--text-2);">Profit</th>
+            <th style="padding:8px 6px;text-align:right;color:var(--text-2);">Mult</th>
+            <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Driver</th>
         </tr></thead><tbody>"""
-        _comp_rows = ""
-        for _ri, _ropt in enumerate(_plan_routes):
-            _rh = int(_ropt["duration_hrs"])
-            _rm = int((_ropt["duration_hrs"] % 1) * 60)
-            _sel_bg = "rgba(66,133,244,0.08)" if _ri == _sel_idx else "transparent"
-            _dl_color = "var(--green)" if _ropt["meets_deadline"] else "var(--red)"
-            _dl_text = "Yes" if _ropt["meets_deadline"] else "No"
-            _comp_rows += f"""<tr style="background:{_sel_bg};border-bottom:1px solid rgba(46,37,69,0.3);">
-                <td style="padding:8px;color:var(--accent);font-weight:700;">{"&#9679; " if _ri == _sel_idx else ""}{_ropt["label"]}</td>
-                <td style="padding:8px;text-align:right;color:var(--text-0);">{_ropt["distance_km"]:.0f} km</td>
-                <td style="padding:8px;text-align:right;color:var(--text-0);">{_rh}h {_rm}m</td>
-                <td style="padding:8px;text-align:right;color:var(--text-0);font-weight:700;">{_ropt["cost"]["total"]:,.0f}</td>
-                <td style="padding:8px;text-align:right;color:var(--green);font-weight:700;">{_ropt["recommended_price"]:,.0f}</td>
-                <td style="padding:8px;text-align:right;color:var(--accent);font-weight:700;">{_ropt["recommended_price"] - _ropt["cost"]["total"]:,.0f}</td>
-                <td style="padding:8px;text-align:center;color:{_dl_color};font-weight:600;">{_dl_text}</td>
+
+        _table_rows = ""
+        for _item in _assigned:
+            _sc = _item["score"]
+            if _sc > 75:
+                _row_bg = "rgba(239,68,68,0.08)"
+                _score_color = "var(--red)"
+            elif _sc > 50:
+                _row_bg = "rgba(245,158,11,0.08)"
+                _score_color = "var(--amber)"
+            else:
+                _row_bg = "transparent"
+                _score_color = "var(--green)"
+
+            _pri_pill = {"Critical": "pill-red", "High": "pill-amber", "Standard": "pill-green"}.get(_item["priority"], "pill-green")
+            _buf_color = "var(--green)" if _item["buffer_hrs"] > 4 else ("var(--amber)" if _item["buffer_hrs"] > 0 else "var(--red)")
+            _drv = _item.get("assigned_driver", {})
+            _trk = _item.get("assigned_truck", {})
+
+            _table_rows += f"""<tr style="background:{_row_bg};border-bottom:1px solid var(--border);">
+                <td style="padding:8px 6px;text-align:center;font-weight:800;color:var(--accent);font-size:0.9rem;">{_item["rank"]}</td>
+                <td style="padding:8px 6px;color:var(--text-0);font-weight:600;font-size:0.72rem;">{_item["order_ref"] or _item["id"]}</td>
+                <td style="padding:8px 6px;color:var(--text-1);font-size:0.72rem;">{_item["customer_name"]}</td>
+                <td style="padding:8px 6px;color:var(--text-1);font-size:0.74rem;">{"&#10052; " if _item["is_cooled"] else ""}{_item["cargo"]}</td>
+                <td style="padding:8px 6px;text-align:center;"><span class="pill {_pri_pill}" style="font-size:0.65rem;">{_item["priority"]}</span></td>
+                <td style="padding:8px 6px;color:var(--text-1);font-size:0.72rem;">{_item["origin"].split("(")[0].strip()} &#10132; {_item["destination"]}</td>
+                <td style="padding:8px 6px;text-align:right;color:{_buf_color};font-weight:700;">{_item["buffer_hrs"]:.1f}h</td>
+                <td style="padding:8px 6px;text-align:right;color:{_score_color};font-weight:800;font-size:0.85rem;">{_sc:.0f}</td>
+                <td style="padding:8px 6px;text-align:right;color:var(--text-0);">{_item["cost"]:,.0f}</td>
+                <td style="padding:8px 6px;text-align:right;color:var(--green);font-weight:700;">{_item["price"]:,.0f}</td>
+                <td style="padding:8px 6px;text-align:right;color:var(--accent);font-weight:700;">{_item["profit"]:,.0f}</td>
+                <td style="padding:8px 6px;text-align:right;color:var(--amber);font-weight:600;">{_item["urgency_mult"]:.2f}x</td>
+                <td style="padding:8px 6px;color:var(--text-1);font-size:0.72rem;">{_drv.get("name", "—")}</td>
             </tr>"""
-        st.markdown(_comp_header + _comp_rows + "</tbody></table></div>", unsafe_allow_html=True)
 
-    # ── Recommended Truck & Driver ──
-    st.markdown('<div class="sec-title">Recommended Truck &amp; Driver</div>', unsafe_allow_html=True)
+        st.markdown(_table_header + _table_rows + "</tbody></table></div>", unsafe_allow_html=True)
 
-    # Find best available truck
-    _avail_trucks = [t for t in _plan_trucks if t["type"] == _truck_type and t["status"] != "in_use"]
-    if not _avail_trucks:
-        _avail_trucks = [t for t in _plan_trucks if t["status"] != "in_use"]
-    _best_truck = min(_avail_trucks, key=lambda t: t["mileage_km"]) if _avail_trucks else None
-
-    # Find best available driver
-    _avail_drivers = [d for d in _plan_drivers if d["status"] == "idle"]
-    if not _avail_drivers:
-        _avail_drivers = [d for d in _plan_drivers if d["status"] != "off_duty"]
-    # Score drivers
-    for _d in _avail_drivers:
-        _d["_score"] = (
-            _d["stats"]["on_time_pct"] * 0.4
-            + (_d["stats"]["avg_rating"] / 5) * 100 * 0.3
-            + min(100, _d["stats"]["km_per_month"] / 100) * 0.3
-        )
-    _avail_drivers.sort(key=lambda d: d.get("_score", 0), reverse=True)
-    _best_driver = _avail_drivers[0] if _avail_drivers else None
-
-    _rec_cols = st.columns(2)
-    with _rec_cols[0]:
-        if _best_truck:
-            st.markdown(f"""
-            <div class="panel">
-                <div style="font-size:0.72rem;color:var(--text-2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Recommended Truck</div>
-                <div style="font-size:1rem;font-weight:700;color:var(--text-0);margin-bottom:4px;">{_best_truck["id"]}</div>
-                <div style="font-size:0.82rem;color:var(--text-1);margin-bottom:8px;">{_best_truck["model"]} ({_best_truck["year"]})</div>
-                <div class="detail-grid" style="grid-template-columns: repeat(3, 1fr);">
-                    <div class="detail-card">
-                        <div class="dc-label">Type</div>
-                        <div class="dc-value" style="font-size:0.9rem;color:{'var(--blue)' if _best_truck['type'] == 'Cooled' else 'var(--accent)'};">{_best_truck["type"]}</div>
-                    </div>
-                    <div class="detail-card">
-                        <div class="dc-label">Plate</div>
-                        <div class="dc-value" style="font-size:0.85rem;">{_best_truck["plate"]}</div>
-                    </div>
-                    <div class="detail-card">
-                        <div class="dc-label">Mileage</div>
-                        <div class="dc-value" style="font-size:0.85rem;">{_best_truck["mileage_km"]:,} km</div>
-                    </div>
-                </div>
-            </div>""", unsafe_allow_html=True)
-        else:
-            st.markdown(
-                '<div class="panel" style="text-align:center;color:var(--amber);padding:20px;">'
-                f'No available {_truck_type} trucks. Consider reassigning fleet.</div>',
-                unsafe_allow_html=True)
-
-    with _rec_cols[1]:
-        if _best_driver:
-            _drv_score = round(_best_driver.get("_score", 0), 1)
-            _score_color = "var(--green)" if _drv_score >= 85 else ("var(--amber)" if _drv_score >= 70 else "var(--red)")
-            st.markdown(f"""
-            <div class="panel">
-                <div style="font-size:0.72rem;color:var(--text-2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Recommended Driver</div>
-                <div style="font-size:1rem;font-weight:700;color:var(--text-0);margin-bottom:4px;">{_best_driver["name"]}</div>
-                <div style="font-size:0.82rem;color:var(--text-1);margin-bottom:8px;">{_best_driver["phone"]} &bull; {_best_driver["current_city"]}</div>
-                <div class="detail-grid" style="grid-template-columns: repeat(3, 1fr);">
-                    <div class="detail-card">
-                        <div class="dc-label">Efficiency</div>
-                        <div class="dc-value" style="font-size:0.9rem;color:{_score_color};">{_drv_score}</div>
-                    </div>
-                    <div class="detail-card">
-                        <div class="dc-label">On-Time</div>
-                        <div class="dc-value" style="font-size:0.9rem;">{_best_driver["stats"]["on_time_pct"]}%</div>
-                    </div>
-                    <div class="detail-card">
-                        <div class="dc-label">Rating</div>
-                        <div class="dc-value" style="font-size:0.9rem;">{_best_driver["stats"]["avg_rating"]}/5</div>
-                    </div>
-                </div>
-            </div>""", unsafe_allow_html=True)
-        else:
-            st.markdown(
-                '<div class="panel" style="text-align:center;color:var(--amber);padding:20px;">'
-                'No available drivers. Consider scheduling adjustments.</div>',
-                unsafe_allow_html=True)
-
-    # ── Dispatch Timeline ──
-    st.markdown('<div class="sec-title">Dispatch Timeline</div>', unsafe_allow_html=True)
-    _now_str = _now().strftime("%b %d, %H:%M")
-    _buffer_hrs = (_plan_deadline - _sr["arrival_time"].replace(tzinfo=None)).total_seconds() / 3600
-    _buffer_color = "var(--green)" if _buffer_hrs > 4 else ("var(--amber)" if _buffer_hrs > 0 else "var(--red)")
-    st.markdown(f"""
-    <div class="panel">
-        <div class="detail-grid" style="grid-template-columns: repeat(5, 1fr);">
-            <div class="detail-card">
-                <div class="dc-label">Now</div>
-                <div class="dc-value" style="font-size:0.85rem;">{_now_str}</div>
-            </div>
-            <div class="detail-card">
-                <div class="dc-label">Dispatch</div>
-                <div class="dc-value" style="font-size:0.85rem;">{_dispatch_str}</div>
-            </div>
-            <div class="detail-card">
-                <div class="dc-label">Arrival (ETA)</div>
-                <div class="dc-value" style="font-size:0.85rem;">{_arrival_str}</div>
-            </div>
-            <div class="detail-card">
-                <div class="dc-label">Deadline</div>
-                <div class="dc-value" style="font-size:0.85rem;">{_deadline_str}</div>
-            </div>
-            <div class="detail-card">
-                <div class="dc-label">Buffer</div>
-                <div class="dc-value" style="font-size:0.9rem;color:{_buffer_color};">{_buffer_hrs:.1f}h</div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    if not _sr["meets_deadline"]:
+        # ══════════════════════════════════════════════════════════
+        # 2. DISPATCH ROUTE MAP
+        # ══════════════════════════════════════════════════════════
+        st.markdown('<div class="sec-title">Dispatch Route Map</div>', unsafe_allow_html=True)
         st.markdown(
-            f'<div class="alert-strip critical"><span class="alert-icon">&#9888;</span>'
-            f'<span><strong>Deadline cannot be met</strong> with this route. ETA is {abs(_buffer_hrs):.1f}h past deadline. '
-            f'Consider a faster route or earlier dispatch.</span></div>',
-            unsafe_allow_html=True,
+            '<div style="display:flex;gap:16px;margin-bottom:8px;">'
+            '<span style="font-size:0.75rem;color:#ef4444;font-weight:600;">&#9473;&#9473; Rank 1-3 (Immediate)</span>'
+            '<span style="font-size:0.75rem;color:#f59e0b;font-weight:600;">&#9473;&#9473; Rank 4-6 (Soon)</span>'
+            '<span style="font-size:0.75rem;color:#3b82f6;font-weight:600;">&#9473;&#9473; Rank 7+ (Standard)</span>'
+            '</div>', unsafe_allow_html=True,
         )
-    else:
-        st.markdown(
-            f'<div class="alert-strip ok"><span class="alert-icon">&#10003;</span>'
-            f'<span>Shipment can be delivered <strong>{_buffer_hrs:.1f}h before deadline</strong>. '
-            f'Recommended price: <strong>{_sr["recommended_price"]:,.0f} SAR</strong></span></div>',
-            unsafe_allow_html=True,
-        )
+
+        _plan_map = create_base_map()
+        _plan_all_pts = []
+
+        for _item in _assigned:
+            _rank = _item["rank"]
+            if _rank <= 3:
+                _rcolor = "#ef4444"
+            elif _rank <= 6:
+                _rcolor = "#f59e0b"
+            else:
+                _rcolor = "#3b82f6"
+
+            _geom = _item["route_geom"]
+            if _geom and len(_geom) >= 2:
+                folium.PolyLine(
+                    locations=_geom,
+                    color=_rcolor,
+                    weight=3 if _rank <= 3 else 2,
+                    opacity=0.8 if _rank <= 6 else 0.5,
+                    tooltip=f'#{_rank} {_item["id"]} — {_item["origin"].split("(")[0].strip()} &#10132; {_item["destination"]} — Score: {_item["score"]:.0f}',
+                ).add_to(_plan_map)
+                _plan_all_pts.extend(_geom)
+
+            # Numbered circle marker at origin
+            _oc = _item.get("origin_coords", {})
+            if _oc.get("lat") and _oc.get("lon"):
+                folium.CircleMarker(
+                    location=[_oc["lat"], _oc["lon"]],
+                    radius=12 if _rank <= 3 else 9,
+                    color=_rcolor,
+                    fill=True,
+                    fill_color=_rcolor,
+                    fill_opacity=0.9,
+                    tooltip=f'#{_rank} {_item["id"]} — {_item["cargo"]} — Score: {_item["score"]:.0f}',
+                ).add_to(_plan_map)
+                folium.Marker(
+                    location=[_oc["lat"], _oc["lon"]],
+                    icon=folium.DivIcon(html=f'<div style="font-size:10px;font-weight:900;color:#fff;text-align:center;line-height:24px;">{_rank}</div>'),
+                ).add_to(_plan_map)
+
+        if _plan_all_pts:
+            fit_map_bounds(_plan_map, _plan_all_pts)
+
+        st_folium(_plan_map, use_container_width=True, height=420, key="planner_dispatch_map")
+
+        # ══════════════════════════════════════════════════════════
+        # 3. DRIVER DELIVERY SCHEDULE
+        # ══════════════════════════════════════════════════════════
+        st.markdown('<div class="sec-title">Driver Delivery Schedule</div>', unsafe_allow_html=True)
+
+        # Group assignments by driver
+        _driver_schedule = {}
+        for _item in _assigned:
+            _drv = _item.get("assigned_driver")
+            if _drv:
+                _did = _drv["id"]
+                if _did not in _driver_schedule:
+                    _driver_schedule[_did] = {"driver": _drv, "loads": []}
+                _driver_schedule[_did]["loads"].append(_item)
+
+        _sched_html = ""
+        for _did, _info in _driver_schedule.items():
+            _drv = _info["driver"]
+            _eff = _drv.get("_eff_score", 0)
+            _eff_color = "var(--green)" if _eff >= 85 else ("var(--amber)" if _eff >= 70 else "var(--red)")
+            _loads = _info["loads"]
+
+            _load_items = ""
+            for _li, _load in enumerate(_loads):
+                _buf_c = "var(--green)" if _load["buffer_hrs"] > 4 else ("var(--amber)" if _load["buffer_hrs"] > 0 else "var(--red)")
+                _pri_c = {"Critical": "var(--red)", "High": "var(--amber)", "Standard": "var(--text-1)"}.get(_load["priority"], "var(--text-1)")
+                _depart_str = _load["dispatch_time"].strftime("%H:%M")
+                _load_items += (
+                    f'<div style="display:flex;align-items:center;gap:12px;padding:6px 0;'
+                    f'border-bottom:1px solid var(--border);">'
+                    f'<span style="font-weight:800;color:var(--accent);width:20px;">{_li+1}.</span>'
+                    f'<span style="color:var(--text-0);font-weight:600;min-width:140px;">{_load["order_ref"] or _load["id"]}</span>'
+                    f'<span style="color:var(--text-1);font-size:0.78rem;">&#10132; {_load["destination"]}</span>'
+                    f'<span style="color:{_pri_c};font-size:0.72rem;font-weight:600;">{_load["priority"]}</span>'
+                    f'<span style="color:{_buf_c};font-size:0.78rem;font-weight:600;">{_load["buffer_hrs"]:.1f}h buffer</span>'
+                    f'<span style="color:var(--text-2);font-size:0.78rem;margin-left:auto;">Depart {_depart_str}</span>'
+                    f'</div>'
+                )
+
+            _sched_html += (
+                f'<div class="panel" style="margin-bottom:10px;">'
+                f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">'
+                f'<span style="font-weight:700;color:var(--text-0);">{_drv["name"]}</span>'
+                f'<span style="font-size:0.75rem;color:{_eff_color};font-weight:700;">Score: {_eff}</span>'
+                f'<span style="font-size:0.72rem;color:var(--text-2);">{_drv.get("phone", "")}</span>'
+                f'<span style="font-size:0.72rem;color:var(--text-2);margin-left:auto;">{len(_loads)} load{"s" if len(_loads) != 1 else ""}</span>'
+                f'</div>{_load_items}</div>'
+            )
+
+        if _sched_html:
+            st.markdown(_sched_html, unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="panel" style="text-align:center;color:var(--text-2);padding:20px;">No drivers assigned.</div>', unsafe_allow_html=True)
+
+        # ══════════════════════════════════════════════════════════
+        # 4. FLEET ASSIGNMENT SUMMARY TABLE
+        # ══════════════════════════════════════════════════════════
+        st.markdown('<div class="sec-title">Fleet Assignment Summary</div>', unsafe_allow_html=True)
+
+        _fleet_header = """<div class="panel" style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.76rem;">
+        <thead><tr style="border-bottom:2px solid var(--border);">
+            <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Driver</th>
+            <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Truck</th>
+            <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Order Ref</th>
+            <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Customer</th>
+            <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Cargo</th>
+            <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Route</th>
+            <th style="padding:8px 6px;text-align:right;color:var(--text-2);">Depart</th>
+            <th style="padding:8px 6px;text-align:right;color:var(--text-2);">ETA</th>
+            <th style="padding:8px 6px;text-align:right;color:var(--text-2);">Price (SAR)</th>
+        </tr></thead><tbody>"""
+
+        _fleet_rows = ""
+        for _item in _assigned:
+            _drv = _item.get("assigned_driver", {})
+            _trk = _item.get("assigned_truck", {})
+            _dep_str = _item["dispatch_time"].strftime("%b %d, %H:%M")
+            _eta_str = _item["eta"].strftime("%b %d, %H:%M")
+
+            _fleet_rows += f"""<tr style="border-bottom:1px solid var(--border);">
+                <td style="padding:8px 6px;color:var(--text-0);font-weight:600;">{_drv.get("name", "—")}</td>
+                <td style="padding:8px 6px;color:var(--text-1);font-size:0.74rem;">{_trk.get("id", "—")} <span style="color:var(--text-2);">({_trk.get("type", "")})</span></td>
+                <td style="padding:8px 6px;color:var(--accent);font-weight:600;font-size:0.72rem;">{_item["order_ref"] or _item["id"]}</td>
+                <td style="padding:8px 6px;color:var(--text-1);font-size:0.72rem;">{_item["customer_name"]}</td>
+                <td style="padding:8px 6px;color:var(--text-1);">{"&#10052; " if _item["is_cooled"] else ""}{_item["cargo"]}</td>
+                <td style="padding:8px 6px;color:var(--text-1);font-size:0.72rem;">{_item["origin"].split("(")[0].strip()} &#10132; {_item["destination"]}</td>
+                <td style="padding:8px 6px;text-align:right;color:var(--text-0);">{_dep_str}</td>
+                <td style="padding:8px 6px;text-align:right;color:var(--text-0);">{_eta_str}</td>
+                <td style="padding:8px 6px;text-align:right;color:var(--green);font-weight:700;">{_item["price"]:,.0f}</td>
+            </tr>"""
+
+        st.markdown(_fleet_header + _fleet_rows + "</tbody></table></div>", unsafe_allow_html=True)
+
+        # ══════════════════════════════════════════════════════════
+        # 5. HIRING / CAPACITY RECOMMENDATIONS
+        # ══════════════════════════════════════════════════════════
+        if _unassigned:
+            st.markdown('<div class="sec-title">Capacity Recommendations</div>', unsafe_allow_html=True)
+
+            _need_cooled_trucks = sum(1 for u in _unassigned if u.get("_missing_truck") and u["is_cooled"])
+            _need_regular_trucks = sum(1 for u in _unassigned if u.get("_missing_truck") and not u["is_cooled"])
+            _need_drivers = sum(1 for u in _unassigned if u.get("_missing_driver"))
+            _at_risk_rev = sum(u["est_revenue"] for u in _unassigned)
+
+            _rec_html = '<div class="panel">'
+            _rec_html += (
+                f'<div class="alert-strip critical" style="margin-bottom:12px;">'
+                f'<span class="alert-icon">&#9888;</span>'
+                f'<span><strong>{len(_unassigned)} shipment{"s" if len(_unassigned) != 1 else ""} unassigned</strong> '
+                f'due to insufficient capacity. Estimated revenue at risk: <strong>{_at_risk_rev:,.0f} SAR</strong></span></div>'
+            )
+
+            if _need_drivers > 0:
+                _rec_html += (
+                    f'<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">'
+                    f'<span style="font-size:1.1rem;">&#9823;</span>'
+                    f'<span style="color:var(--text-0);font-weight:600;">Hire {_need_drivers} additional driver{"s" if _need_drivers != 1 else ""}</span>'
+                    f'</div>'
+                )
+            if _need_cooled_trucks > 0:
+                _rec_html += (
+                    f'<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">'
+                    f'<span style="font-size:1.1rem;">&#10052;</span>'
+                    f'<span style="color:var(--text-0);font-weight:600;">Acquire {_need_cooled_trucks} Cooled truck{"s" if _need_cooled_trucks != 1 else ""}</span>'
+                    f'</div>'
+                )
+            if _need_regular_trucks > 0:
+                _rec_html += (
+                    f'<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">'
+                    f'<span style="font-size:1.1rem;">&#9951;</span>'
+                    f'<span style="color:var(--text-0);font-weight:600;">Acquire {_need_regular_trucks} Regular truck{"s" if _need_regular_trucks != 1 else ""}</span>'
+                    f'</div>'
+                )
+
+            # List unassigned shipments
+            _rec_html += '<div style="margin-top:12px;font-size:0.72rem;color:var(--text-2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Unassigned Shipments</div>'
+            for _u in _unassigned:
+                _ubuf_c = "var(--red)" if _u["buffer_hrs"] < 0 else ("var(--amber)" if _u["buffer_hrs"] < 4 else "var(--green)")
+                _rec_html += (
+                    f'<div style="display:flex;align-items:center;gap:10px;padding:4px 0;font-size:0.78rem;">'
+                    f'<span style="color:var(--accent);font-weight:600;">{_u["id"]}</span>'
+                    f'<span style="color:var(--text-1);">{_u["cargo"]}</span>'
+                    f'<span style="color:var(--text-1);">{_u["origin"].split("(")[0].strip()} &#10132; {_u["destination"]}</span>'
+                    f'<span style="color:{_ubuf_c};font-weight:600;">{_u["buffer_hrs"]:.1f}h buffer</span>'
+                    f'<span style="color:var(--text-2);margin-left:auto;">Score: {_u["score"]:.0f}</span>'
+                    f'</div>'
+                )
+            _rec_html += '</div>'
+            st.markdown(_rec_html, unsafe_allow_html=True)
+
+        # ── Profit floor warnings ──
+        if _below_floor and plan_profit_floor > 0:
+            st.markdown(
+                f'<div class="alert-strip critical" style="margin-top:8px;">'
+                f'<span class="alert-icon">&#9733;</span>'
+                f'<span><strong>{len(_below_floor)} shipment{"s" if len(_below_floor) != 1 else ""} below minimum profit floor</strong> '
+                f'of {plan_profit_floor:,} SAR. Consider raising prices or declining these loads.</span></div>',
+                unsafe_allow_html=True,
+            )
+
+        # ══════════════════════════════════════════════════════════
+        # 6. FOCUS-AWARE RECOMMENDATIONS
+        # ══════════════════════════════════════════════════════════
+        st.markdown('<div class="sec-title">Strategy Recommendations</div>', unsafe_allow_html=True)
+
+        _late_count = sum(1 for a in _assigned if not a["meets_deadline"])
+        _high_margin = [a for a in _assigned if a["profit"] > 1000]
+
+        _strat_html = '<div class="panel">'
+        if planner_focus == "Profit Maximization":
+            _strat_html += (
+                f'<div style="margin-bottom:8px;font-weight:700;color:var(--green);">&#9733; Profit Maximization Mode</div>'
+                f'<div style="font-size:0.82rem;color:var(--text-1);margin-bottom:6px;">'
+                f'Total margin: <strong style="color:var(--green);">{_total_margin:,.0f} SAR</strong> across {len(_assigned)} shipments. '
+                f'{len(_high_margin)} shipment{"s" if len(_high_margin) != 1 else ""} exceed 1,000 SAR profit.</div>'
+            )
+            if _late_count > 0:
+                _strat_html += (
+                    f'<div style="font-size:0.82rem;color:var(--amber);">'
+                    f'&#9888; {_late_count} shipment{"s" if _late_count != 1 else ""} may miss deadline. '
+                    f'Accepting late delivery risk for higher margin.</div>'
+                )
+        elif planner_focus == "Reputation (On-Time)":
+            _strat_html += (
+                f'<div style="margin-bottom:8px;font-weight:700;color:var(--blue);">&#9201; Reputation / On-Time Mode</div>'
+                f'<div style="font-size:0.82rem;color:var(--text-1);margin-bottom:6px;">'
+                f'On-time delivery rate: <strong style="color:{"var(--green)" if _on_time_pct >= 90 else "var(--amber)"};">{_on_time_pct:.0f}%</strong>. '
+                f'Prioritizing deadline compliance over margin.</div>'
+            )
+            if _late_count > 0:
+                _strat_html += (
+                    f'<div style="font-size:0.82rem;color:var(--red);">'
+                    f'&#9888; {_late_count} shipment{"s" if _late_count != 1 else ""} still at risk despite priority ordering. '
+                    f'Consider additional capacity or route changes.</div>'
+                )
+        else:
+            _strat_html += (
+                f'<div style="margin-bottom:8px;font-weight:700;color:var(--accent);">&#9878; Balanced Mode</div>'
+                f'<div style="font-size:0.82rem;color:var(--text-1);margin-bottom:6px;">'
+                f'Balancing margin ({_total_margin:,.0f} SAR) with on-time delivery ({_on_time_pct:.0f}%). '
+                f'{len(_assigned)} dispatched, {len(_unassigned)} pending capacity.</div>'
+            )
+
+        _strat_html += '</div>'
+        st.markdown(_strat_html, unsafe_allow_html=True)
+
+        # ══════════════════════════════════════════════════════════
+        # 7. MONITOR IN MICRO VIEW BUTTON
+        # ══════════════════════════════════════════════════════════
+        st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+        _mon_cols = st.columns([3, 1])
+        with _mon_cols[1]:
+            if st.button("Monitor Live in Micro View", key="planner_to_micro", use_container_width=True):
+                st.session_state.view_mode = "Micro"
+                st.session_state.micro_sb_company = planner_company
+                st.rerun()

@@ -16,6 +16,8 @@ COMPANIES = [
         "hq_city": "Riyadh",
         "fleet_size": 18,
         "specialization": "General Freight & Industrial",
+        "order_prefix": "AJL",
+        "erp_system": "SAP S/4HANA",
     },
     {
         "id": "CMP-002",
@@ -23,6 +25,8 @@ COMPANIES = [
         "hq_city": "Dammam",
         "fleet_size": 14,
         "specialization": "GCC Cross-Border Express",
+        "order_prefix": "GEX",
+        "erp_system": "Oracle NetSuite",
     },
     {
         "id": "CMP-003",
@@ -30,6 +34,8 @@ COMPANIES = [
         "hq_city": "Jeddah",
         "fleet_size": 16,
         "specialization": "Port-to-City Distribution",
+        "order_prefix": "RSC",
+        "erp_system": "Microsoft Dynamics 365",
     },
     {
         "id": "CMP-004",
@@ -37,6 +43,8 @@ COMPANIES = [
         "hq_city": "NEOM",
         "fleet_size": 10,
         "specialization": "NEOM & Northern Region",
+        "order_prefix": "NFS",
+        "erp_system": "SAP S/4HANA",
     },
     {
         "id": "CMP-005",
@@ -44,6 +52,8 @@ COMPANIES = [
         "hq_city": "Jeddah",
         "fleet_size": 12,
         "specialization": "Temperature-Controlled Cargo",
+        "order_prefix": "SCC",
+        "erp_system": "Odoo ERP",
     },
     {
         "id": "CMP-006",
@@ -51,7 +61,17 @@ COMPANIES = [
         "hq_city": "Al Khobar",
         "fleet_size": 15,
         "specialization": "Heavy & Oversized Loads",
+        "order_prefix": "PNH",
+        "erp_system": "Oracle NetSuite",
     },
+]
+
+# Customer reference prefixes (for the end-customer who placed the order)
+_CUSTOMER_NAMES = [
+    "ARAMCO", "SABIC", "STC", "Al Rajhi", "ACWA Power",
+    "Ma'aden", "Almarai", "NADEC", "Panda Retail", "BinDawood",
+    "Jarir", "Extra", "Al Othaim", "Tamimi Markets", "Dallah Health",
+    "SACO", "Al Faisaliah", "Savola Group", "Yanbu Cement", "SADAFCO",
 ]
 
 # ── Driver Name Pool ──
@@ -212,9 +232,23 @@ def generate_company_data(shipments):
 
     # ── Assign shipments round-robin to companies ──
     company_ids = [c["id"] for c in all_companies]
+    _comp_order_counters = {c["id"]: 0 for c in all_companies}
+    _comp_lookup = {c["id"]: c for c in all_companies}
     for idx, s in enumerate(shipments):
         cid = company_ids[idx % len(company_ids)]
         s["company_id"] = cid
+
+        # Generate company order reference (linked to their ERP/OMS)
+        _comp_order_counters[cid] += 1
+        _prefix = _comp_lookup[cid].get("order_prefix", "ORD")
+        _seq = _comp_order_counters[cid]
+        s["order_ref"] = f"ORD-{_prefix}-2026-{_seq:04d}"
+
+        # Customer/client reference (who placed the order with the company)
+        _cust = _CUSTOMER_NAMES[idx % len(_CUSTOMER_NAMES)]
+        s["customer_ref"] = f"{_cust}-PO-{random.randint(10000, 99999)}"
+        s["customer_name"] = _cust
+        s["erp_system"] = _comp_lookup[cid].get("erp_system", "SAP")
 
     # ── Link drivers & trucks to active shipments ──
     for comp in all_companies:
