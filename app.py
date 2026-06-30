@@ -39,7 +39,8 @@ from map_utils import (
     add_optimization_routes,
 )
 from mock_data import generate_shipments, get_shipment_summary, get_port_summary
-from company_data import generate_company_data, get_company_summary, COMPANIES, DEMO_COMPANY_ID
+from company_data import generate_company_data, get_company_summary, COMPANIES
+DEMO_COMPANY_ID = "CMP-001"
 from delay_analytics_data import generate_analytics_data, generate_route_options
 
 # ── Page Config ──
