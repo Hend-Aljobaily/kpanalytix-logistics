@@ -59,39 +59,66 @@ st_autorefresh(interval=3_600_000, limit=None, key="auto_refresh")
 st.markdown("""
 <style>
     /* ── Reset & Base ── */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap');
 
     :root {
-        --bg-0: #0a0a0f;
-        --bg-1: #111118;
-        --bg-2: #1a1a24;
-        --bg-3: #22222f;
-        --border: rgba(255,255,255,0.06);
-        --border-hover: rgba(255,255,255,0.1);
-        --text-0: #f0f0f5;
-        --text-1: #b0b0c0;
-        --text-2: #70708a;
+        /* Surface layers — blue-tinted darks */
+        --bg-0: #08080d;
+        --bg-1: #0f0f16;
+        --bg-2: #16161f;
+        --bg-3: #1e1e2a;
+        --bg-4: #262635;
+
+        /* Borders */
+        --border: rgba(255,255,255,0.05);
+        --border-hover: rgba(255,255,255,0.09);
+        --border-active: rgba(255,255,255,0.14);
+        --border-subtle: rgba(255,255,255,0.03);
+
+        /* Typography */
+        --text-0: #e8e8ed;
+        --text-1: #a0a0b8;
+        --text-2: #5c5c78;
+
+        /* Accent */
         --accent: #8b5cf6;
-        --accent-dim: rgba(139,92,246,0.15);
-        --green: #22c55e;
-        --green-dim: rgba(34,197,94,0.12);
-        --amber: #f59e0b;
-        --amber-dim: rgba(245,158,11,0.12);
-        --red: #ef4444;
-        --red-dim: rgba(239,68,68,0.12);
-        --blue: #3b82f6;
-        --blue-dim: rgba(59,130,246,0.12);
-        --radius: 8px;
-        --radius-lg: 12px;
+        --accent-hover: #7c3aed;
+        --accent-dim: rgba(139,92,246,0.10);
+        --accent-text: #c4b5fd;
+
+        /* Status — shifted to 400-weight for dark backgrounds */
+        --green: #34d399;
+        --green-dim: rgba(52,211,153,0.08);
+        --amber: #fbbf24;
+        --amber-dim: rgba(251,191,36,0.08);
+        --red: #f87171;
+        --red-dim: rgba(248,113,113,0.08);
+        --blue: #60a5fa;
+        --blue-dim: rgba(96,165,250,0.08);
+
+        /* Radii */
+        --radius: 6px;
+        --radius-lg: 8px;
+
+        /* Typography scale */
+        --text-xs: 0.6875rem;
+        --text-sm: 0.8125rem;
+        --text-base: 0.875rem;
     }
 
-    /* ── Streamlit Chrome Removal ── */
-    .stApp { background: var(--bg-0) !important; font-family: 'Inter', -apple-system, sans-serif !important; }
+    /* ── Streamlit Chrome ── */
+    .stApp {
+        background: var(--bg-0) !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+        font-size: var(--text-base) !important;
+        -webkit-font-smoothing: antialiased !important;
+        -moz-osx-font-smoothing: grayscale !important;
+    }
     header[data-testid="stHeader"] { background: var(--bg-0) !important; }
     footer { display: none !important; }
     [data-testid="stDecoration"] { display: none !important; }
     .stApp > .main > .block-container {
-        padding: 1.25rem 2rem 2rem 2rem !important;
+        padding: 1rem 1.75rem 2rem 1.75rem !important;
         max-width: 100% !important;
     }
     .main .block-container { color: var(--text-0); }
@@ -108,15 +135,16 @@ st.markdown("""
         background: var(--bg-2) !important;
         border-color: var(--border) !important;
         border-radius: var(--radius) !important;
+        font-size: var(--text-sm) !important;
     }
     section[data-testid="stSidebar"] hr { border-color: var(--border) !important; }
     section[data-testid="stSidebar"] .stSelectbox label,
     section[data-testid="stSidebar"] .stMultiSelect label {
-        font-size: 0.75rem !important;
+        font-size: var(--text-xs) !important;
         text-transform: uppercase !important;
-        letter-spacing: 0.5px !important;
+        letter-spacing: 0.03em !important;
         color: var(--text-2) !important;
-        font-weight: 600 !important;
+        font-weight: 500 !important;
     }
 
     /* ── Inputs (main area) ── */
@@ -127,7 +155,7 @@ st.markdown("""
         border-color: var(--border) !important;
         border-radius: var(--radius) !important;
     }
-    .stSelectbox label { color: var(--text-2) !important; font-size: 0.8rem !important; }
+    .stSelectbox label { color: var(--text-2) !important; font-size: var(--text-sm) !important; }
 
     /* ── Buttons ── */
     .stButton > button {
@@ -136,8 +164,8 @@ st.markdown("""
         border: 1px solid var(--border) !important;
         border-radius: var(--radius) !important;
         font-weight: 500 !important;
-        font-size: 0.82rem !important;
-        transition: all 0.15s ease !important;
+        font-size: var(--text-sm) !important;
+        transition: background 0.15s ease, border-color 0.15s ease !important;
     }
     .stButton > button:hover {
         background: var(--bg-3) !important;
@@ -145,8 +173,11 @@ st.markdown("""
     }
     .stButton > button[kind="primary"] {
         background: var(--accent) !important;
-        border: none !important;
+        border: 1px solid transparent !important;
         color: white !important;
+    }
+    .stButton > button[kind="primary"]:hover {
+        background: var(--accent-hover) !important;
     }
 
     /* ── Top Bar ── */
@@ -154,81 +185,85 @@ st.markdown("""
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0.9rem 1.5rem;
+        padding: 12px 20px;
         background: var(--bg-1);
         border: 1px solid var(--border);
         border-radius: var(--radius-lg);
-        margin-bottom: 1.25rem;
+        margin-bottom: 16px;
     }
     .top-bar-title {
-        font-size: 1.15rem;
-        font-weight: 700;
+        font-size: 1rem;
+        font-weight: 600;
         color: var(--text-0);
-        letter-spacing: -0.01em;
+        letter-spacing: -0.02em;
     }
     .top-bar-sub {
-        font-size: 0.78rem;
+        font-size: var(--text-xs);
         color: var(--text-2);
-        margin-top: 2px;
+        margin-top: 1px;
+        letter-spacing: 0.01em;
     }
     .top-bar-right { display: flex; align-items: center; gap: 16px; }
     .live-dot {
-        width: 8px; height: 8px; border-radius: 50%; background: var(--green);
-        display: inline-block; margin-right: 6px;
-        animation: blink 2s infinite;
-        box-shadow: 0 0 6px rgba(34,197,94,0.5);
+        width: 6px; height: 6px; border-radius: 50%; background: var(--green);
+        display: inline-block; margin-right: 5px;
+        animation: pulse 2.5s ease-in-out infinite;
+        box-shadow: 0 0 4px rgba(52,211,153,0.4);
     }
-    @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
     .live-label {
-        font-size: 0.75rem; font-weight: 600; color: var(--green);
-        text-transform: uppercase; letter-spacing: 0.5px;
+        font-size: var(--text-xs); font-weight: 500; color: var(--green);
+        text-transform: uppercase; letter-spacing: 0.04em;
     }
-    .top-bar-time { font-size: 0.78rem; color: var(--text-2); }
+    .top-bar-time { font-size: var(--text-xs); color: var(--text-2); font-variant-numeric: tabular-nums; }
 
     /* ── KPI Cards ── */
     .kpi-grid {
         display: grid;
         grid-template-columns: repeat(5, 1fr);
-        gap: 12px;
-        margin-bottom: 12px;
+        gap: 10px;
+        margin-bottom: 10px;
     }
     .kpi {
         background: var(--bg-1);
         border: 1px solid var(--border);
         border-radius: var(--radius-lg);
-        padding: 16px 20px;
+        padding: 14px 18px;
         position: relative;
         overflow: hidden;
         transition: border-color 0.15s ease;
     }
     .kpi:hover { border-color: var(--border-hover); }
     .kpi-label {
-        font-size: 0.68rem;
-        font-weight: 600;
+        font-size: var(--text-xs);
+        font-weight: 500;
         text-transform: uppercase;
-        letter-spacing: 0.6px;
+        letter-spacing: 0.04em;
         color: var(--text-2);
-        margin-bottom: 8px;
+        margin-bottom: 6px;
     }
     .kpi-value {
-        font-size: 1.75rem;
+        font-size: 1.5rem;
         font-weight: 700;
         color: var(--text-0);
         line-height: 1;
+        letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums;
     }
     .kpi-accent {
         position: absolute;
-        top: 0; left: 0; right: 0;
-        height: 2px;
+        top: 0; left: 0; bottom: 0;
+        width: 2px;
+        border-radius: 0 1px 1px 0;
     }
     .kpi-icon {
         position: absolute;
-        top: 14px; right: 16px;
-        font-size: 1.1rem;
-        opacity: 0.5;
+        top: 14px; right: 14px;
+        font-size: 0.85rem;
+        opacity: 0.25;
     }
     .kpi-sub {
-        font-size: 0.72rem;
+        font-size: var(--text-xs);
         color: var(--text-2);
         margin-top: 4px;
     }
@@ -236,41 +271,42 @@ st.markdown("""
     /* ── Alert Strip ── */
     .alert-strip {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         gap: 10px;
-        padding: 10px 16px;
+        padding: 10px 14px;
         border-radius: var(--radius);
-        font-size: 0.82rem;
-        margin-bottom: 14px;
+        font-size: var(--text-sm);
+        margin-bottom: 10px;
         font-weight: 500;
+        line-height: 1.5;
     }
     .alert-strip.critical {
         background: var(--red-dim);
-        border: 1px solid rgba(239,68,68,0.25);
+        border: 1px solid rgba(248,113,113,0.15);
         color: #fca5a5;
     }
     .alert-strip.warn {
         background: var(--amber-dim);
-        border: 1px solid rgba(245,158,11,0.25);
-        color: #fcd34d;
+        border: 1px solid rgba(251,191,36,0.15);
+        color: #fde68a;
     }
     .alert-strip.ok {
         background: var(--green-dim);
-        border: 1px solid rgba(34,197,94,0.25);
-        color: #86efac;
+        border: 1px solid rgba(52,211,153,0.15);
+        color: #6ee7b7;
     }
-    .alert-strip .alert-icon { font-size: 1rem; flex-shrink: 0; }
+    .alert-strip .alert-icon { font-size: 0.85rem; flex-shrink: 0; margin-top: 1px; }
 
     /* ── Section Titles ── */
     .sec-title {
-        font-size: 0.82rem;
-        font-weight: 700;
+        font-size: var(--text-xs);
+        font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.8px;
+        letter-spacing: 0.05em;
         color: var(--text-2);
-        margin: 1.5rem 0 0.75rem 0;
-        padding-bottom: 8px;
-        border-bottom: 1px solid var(--border);
+        margin: 20px 0 10px 0;
+        padding-bottom: 0;
+        border-bottom: none;
     }
 
     /* ── Panel (generic card wrapper) ── */
@@ -278,8 +314,8 @@ st.markdown("""
         background: var(--bg-1);
         border: 1px solid var(--border);
         border-radius: var(--radius-lg);
-        padding: 20px;
-        margin-bottom: 14px;
+        padding: 16px 20px;
+        margin-bottom: 10px;
     }
 
     /* ── Port Operations Table ── */
@@ -287,124 +323,126 @@ st.markdown("""
         width: 100%;
         border-collapse: separate;
         border-spacing: 0;
-        font-size: 0.82rem;
+        font-size: var(--text-sm);
     }
     .ops-table th {
         text-align: left;
-        font-size: 0.68rem;
-        font-weight: 600;
+        font-size: var(--text-xs);
+        font-weight: 500;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.04em;
         color: var(--text-2);
-        padding: 10px 14px;
+        padding: 8px 14px;
         border-bottom: 1px solid var(--border);
         background: transparent;
     }
     .ops-table td {
-        padding: 11px 14px;
-        color: var(--text-0);
-        border-bottom: 1px solid var(--border);
+        padding: 9px 14px;
+        color: var(--text-1);
+        border-bottom: 1px solid var(--border-subtle);
         font-variant-numeric: tabular-nums;
     }
     .ops-table tr:last-child td { border-bottom: none; }
-    .ops-table tr:hover td { background: rgba(255,255,255,0.02); }
-    .ops-table .port-name { font-weight: 600; color: var(--accent); }
-    .ops-table .val-cool { color: var(--blue); font-weight: 600; }
-    .ops-table .val-reg { color: var(--accent); font-weight: 600; }
+    .ops-table tr:hover td { background: rgba(255,255,255,0.015); }
+    .ops-table .port-name { font-weight: 500; color: var(--text-0); }
+    .ops-table .val-cool { color: var(--blue); font-weight: 500; }
+    .ops-table .val-reg { color: var(--accent-text); font-weight: 500; }
 
     /* ── Detail Mini Cards ── */
     .detail-grid {
         display: grid;
         grid-template-columns: repeat(6, 1fr);
-        gap: 10px;
-        margin-bottom: 14px;
+        gap: 8px;
+        margin-bottom: 10px;
     }
     .detail-card {
         background: var(--bg-2);
         border: 1px solid var(--border);
         border-radius: var(--radius);
-        padding: 12px 14px;
+        padding: 10px 12px;
         text-align: center;
     }
     .detail-card .dc-label {
-        font-size: 0.65rem; font-weight: 600;
-        text-transform: uppercase; letter-spacing: 0.5px;
-        color: var(--text-2); margin-bottom: 6px;
+        font-size: 0.625rem; font-weight: 500;
+        text-transform: uppercase; letter-spacing: 0.04em;
+        color: var(--text-2); margin-bottom: 4px;
     }
     .detail-card .dc-value {
-        font-size: 1.1rem; font-weight: 700; color: var(--text-0);
+        font-size: 1rem; font-weight: 700; color: var(--text-0);
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.02em;
     }
 
     /* ── Recommendation Grid ── */
     .rec-grid {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
-        gap: 10px;
-        margin-bottom: 14px;
+        gap: 8px;
+        margin-bottom: 10px;
     }
 
     /* ── Recovery Banner ── */
     .recovery {
-        padding: 14px 18px;
+        padding: 12px 16px;
         border-radius: var(--radius);
-        font-size: 0.85rem;
-        line-height: 1.5;
-        color: var(--text-0);
+        font-size: var(--text-sm);
+        line-height: 1.55;
+        color: var(--text-1);
     }
-    .recovery b { color: var(--accent); }
+    .recovery b { color: var(--text-0); }
     .recovery.action {
         background: var(--amber-dim);
-        border: 1px solid rgba(245,158,11,0.2);
+        border: 1px solid rgba(251,191,36,0.12);
     }
     .recovery.ok {
         background: var(--green-dim);
-        border: 1px solid rgba(34,197,94,0.2);
+        border: 1px solid rgba(52,211,153,0.12);
     }
 
     /* ── Status Pill ── */
     .pill {
         display: inline-block;
-        padding: 3px 10px;
-        border-radius: 20px;
-        font-size: 0.72rem;
-        font-weight: 600;
-        letter-spacing: 0.2px;
+        padding: 2px 8px;
+        border-radius: 9999px;
+        font-size: var(--text-xs);
+        font-weight: 500;
+        letter-spacing: 0.01em;
     }
     .pill-green { background: var(--green-dim); color: var(--green); }
     .pill-amber { background: var(--amber-dim); color: var(--amber); }
     .pill-red { background: var(--red-dim); color: var(--red); }
     .pill-blue { background: var(--blue-dim); color: var(--blue); }
-    .pill-purple { background: var(--accent-dim); color: var(--accent); }
+    .pill-purple { background: var(--accent-dim); color: var(--accent-text); }
 
     /* ── Sidebar Alerts ── */
     .sb-alert {
         padding: 10px 12px;
         border-radius: var(--radius);
-        font-size: 0.8rem;
-        margin-bottom: 8px;
+        font-size: var(--text-sm);
+        margin-bottom: 6px;
         font-weight: 500;
         line-height: 1.45;
     }
     .sb-alert.crit {
         background: var(--red-dim);
-        border: 1px solid rgba(239,68,68,0.2);
+        border: 1px solid rgba(248,113,113,0.12);
         color: #fca5a5;
     }
     .sb-alert.warn {
         background: var(--amber-dim);
-        border: 1px solid rgba(245,158,11,0.2);
-        color: #fcd34d;
+        border: 1px solid rgba(251,191,36,0.12);
+        color: #fde68a;
     }
     .sb-alert.ok {
         background: var(--green-dim);
-        border: 1px solid rgba(34,197,94,0.2);
-        color: #86efac;
+        border: 1px solid rgba(52,211,153,0.12);
+        color: #6ee7b7;
     }
-    .sb-alert strong { font-weight: 700; }
+    .sb-alert strong { font-weight: 600; }
     .sb-detail {
-        font-size: 0.75rem;
+        font-size: var(--text-xs);
         color: var(--text-2);
-        margin-top: 4px;
+        margin-top: 3px;
         padding-left: 2px;
     }
 
@@ -424,25 +462,26 @@ st.markdown("""
     }
     div[data-testid="stExpander"] summary {
         color: var(--text-0) !important;
-        font-weight: 600 !important;
+        font-weight: 500 !important;
+        font-size: var(--text-sm) !important;
     }
 
-    /* ── Tab styling (dark theme) ── */
+    /* ── Tab styling ── */
     .stTabs [data-baseweb="tab-list"] {
         gap: 0;
         background: var(--bg-1);
         border-radius: var(--radius-lg);
         border: 1px solid var(--border);
-        padding: 4px;
+        padding: 3px;
     }
     .stTabs [data-baseweb="tab"] {
         background: transparent !important;
         color: var(--text-2) !important;
         border: none !important;
         border-radius: var(--radius) !important;
-        font-weight: 600 !important;
-        font-size: 0.85rem !important;
-        padding: 8px 24px !important;
+        font-weight: 500 !important;
+        font-size: var(--text-sm) !important;
+        padding: 7px 20px !important;
     }
     .stTabs [aria-selected="true"] {
         background: var(--bg-3) !important;
@@ -456,21 +495,22 @@ st.markdown("""
         background: var(--bg-1);
         border: 1px solid var(--border);
         border-radius: var(--radius-lg);
-        padding: 18px 24px;
-        margin-bottom: 16px;
+        padding: 16px 20px;
+        margin-bottom: 12px;
         display: flex;
         align-items: center;
         justify-content: space-between;
     }
     .company-header .ch-name {
-        font-size: 1.2rem;
-        font-weight: 700;
+        font-size: 1.05rem;
+        font-weight: 600;
         color: var(--text-0);
+        letter-spacing: -0.01em;
     }
     .company-header .ch-detail {
-        font-size: 0.78rem;
+        font-size: var(--text-xs);
         color: var(--text-2);
-        margin-top: 3px;
+        margin-top: 2px;
     }
 
     /* ── Driver Card ── */
@@ -478,66 +518,66 @@ st.markdown("""
         background: var(--bg-1);
         border: 1px solid var(--border);
         border-radius: var(--radius-lg);
-        padding: 18px 22px;
-        margin-bottom: 12px;
+        padding: 14px 18px;
+        margin-bottom: 8px;
     }
     .driver-card .drv-name {
-        font-size: 1rem;
-        font-weight: 700;
+        font-size: var(--text-base);
+        font-weight: 600;
         color: var(--text-0);
-        margin-bottom: 4px;
+        margin-bottom: 3px;
     }
     .driver-card .drv-info {
-        font-size: 0.78rem;
+        font-size: var(--text-xs);
         color: var(--text-2);
-        margin-bottom: 10px;
+        margin-bottom: 8px;
     }
 
     /* ── Analytics: Cause Card ── */
     .cause-card {
-        background: var(--bg-2);
+        background: var(--bg-1);
         border: 1px solid var(--border);
         border-radius: var(--radius);
-        padding: 14px 16px;
-        margin-bottom: 8px;
-        border-left: 3px solid var(--amber);
+        padding: 12px 14px;
+        margin-bottom: 6px;
+        border-left: 2px solid var(--amber);
     }
     .cause-card.severe { border-left-color: var(--red); }
     .cause-card.moderate { border-left-color: var(--amber); }
     .cause-card.minor { border-left-color: var(--blue); }
     .cause-card .cc-cause {
-        font-size: 0.82rem; font-weight: 700; color: var(--text-0); margin-bottom: 4px;
+        font-size: var(--text-sm); font-weight: 600; color: var(--text-0); margin-bottom: 3px;
     }
     .cause-card .cc-desc {
-        font-size: 0.78rem; color: var(--text-1); margin-bottom: 4px;
+        font-size: var(--text-xs); color: var(--text-1); margin-bottom: 3px;
     }
     .cause-card .cc-meta {
-        font-size: 0.72rem; color: var(--text-2);
+        font-size: 0.625rem; color: var(--text-2);
     }
 
     /* ── Analytics: Trip Row ── */
     .trip-row {
         display: grid;
         grid-template-columns: 90px 1fr 80px 80px 80px 65px 80px 1fr;
-        gap: 8px;
-        padding: 8px 12px;
-        font-size: 0.78rem;
-        border-bottom: 1px solid var(--border);
+        gap: 6px;
+        padding: 7px 12px;
+        font-size: var(--text-xs);
+        border-bottom: 1px solid var(--border-subtle);
         align-items: center;
     }
-    .trip-row:hover { background: rgba(255,255,255,0.02); }
+    .trip-row:hover { background: rgba(255,255,255,0.015); }
     .trip-row.header {
-        font-size: 0.68rem; font-weight: 600; text-transform: uppercase;
-        letter-spacing: 0.5px; color: var(--text-2); border-bottom: 1px solid var(--border);
+        font-size: 0.625rem; font-weight: 500; text-transform: uppercase;
+        letter-spacing: 0.04em; color: var(--text-2); border-bottom: 1px solid var(--border);
     }
-    .trip-row .trip-val { color: var(--text-0); font-variant-numeric: tabular-nums; }
+    .trip-row .trip-val { color: var(--text-1); font-variant-numeric: tabular-nums; }
     .trip-row .trip-delayed { color: var(--red); }
     .trip-row .trip-ontime { color: var(--green); }
 
     /* ── Analytics: Hotspot Badge ── */
     .hotspot-badge {
-        display: inline-block; padding: 2px 8px; border-radius: 10px;
-        font-size: 0.72rem; font-weight: 600;
+        display: inline-block; padding: 1px 7px; border-radius: 9999px;
+        font-size: var(--text-xs); font-weight: 500;
     }
     .hotspot-badge.high { background: var(--red-dim); color: var(--red); }
     .hotspot-badge.medium { background: var(--amber-dim); color: var(--amber); }
@@ -548,32 +588,83 @@ st.markdown("""
         background: var(--bg-1);
         border: 1px solid var(--border);
         border-radius: var(--radius-lg);
-        padding: 18px 22px;
-        margin-bottom: 14px;
-        border-left: 4px solid var(--red);
+        padding: 14px 18px;
+        margin-bottom: 10px;
+        border-left: 2px solid var(--red);
     }
     .incident-card .ic-type {
-        font-size: 0.9rem; font-weight: 700; color: var(--red); margin-bottom: 4px;
+        font-size: var(--text-sm); font-weight: 600; color: var(--red); margin-bottom: 3px;
     }
     .incident-card .ic-desc {
-        font-size: 0.82rem; color: var(--text-1); margin-bottom: 10px;
+        font-size: var(--text-xs); color: var(--text-1); margin-bottom: 8px;
     }
 
     /* ── Analytics: Pattern Alert ── */
     .pattern-alert {
         padding: 10px 14px;
         border-radius: var(--radius);
-        font-size: 0.82rem;
-        margin-bottom: 8px;
+        font-size: var(--text-sm);
+        margin-bottom: 6px;
         font-weight: 500;
         background: var(--amber-dim);
-        border: 1px solid rgba(245,158,11,0.2);
-        color: #fcd34d;
+        border: 1px solid rgba(251,191,36,0.12);
+        color: #fde68a;
     }
     .pattern-alert.info {
         background: var(--blue-dim);
-        border-color: rgba(59,130,246,0.2);
+        border-color: rgba(96,165,250,0.12);
         color: #93c5fd;
+    }
+
+    /* ── Home page card hover ── */
+    .home-card {
+        background: var(--bg-1);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 28px 24px;
+        min-height: 300px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        transition: border-color 0.2s ease;
+    }
+    .home-card:hover {
+        border-color: var(--border-active);
+    }
+    .home-card-icon {
+        width: 40px; height: 40px;
+        border-radius: var(--radius);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.15rem;
+        margin: 0 auto 16px auto;
+    }
+    .home-card-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-0);
+        margin-bottom: 4px;
+        letter-spacing: -0.01em;
+        text-align: center;
+    }
+    .home-card-tag {
+        font-size: 0.625rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 12px;
+        text-align: center;
+    }
+    .home-card-desc {
+        font-size: var(--text-xs);
+        color: var(--text-1);
+        line-height: 1.6;
+        text-align: center;
+    }
+    .home-card-footer {
+        font-size: 0.625rem;
+        color: var(--text-2);
+        text-align: center;
+        margin-top: 16px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -888,15 +979,15 @@ _logo_b64 = base64.b64encode(pathlib.Path("assets/logo.png").read_bytes()).decod
 refresh_str = st.session_state.last_refresh.strftime("%b %d, %Y  %H:%M")
 st.markdown(f"""
 <div class="top-bar">
-    <div style="display:flex;align-items:center;gap:18px;">
-        <img src="data:image/png;base64,{_logo_b64}" style="height:30px;">
+    <div style="display:flex;align-items:center;gap:14px;">
+        <img src="data:image/png;base64,{_logo_b64}" style="height:26px;opacity:0.9;">
         <div>
             <div class="top-bar-title">Logistics Optimizer</div>
             <div class="top-bar-sub">Automated Delivery Intelligence</div>
         </div>
     </div>
     <div class="top-bar-right">
-        <div><span class="live-dot"></span><span class="live-label">Live</span></div>
+        <div style="display:flex;align-items:center;"><span class="live-dot"></span><span class="live-label">Live</span></div>
         <div class="top-bar-time">{refresh_str}</div>
     </div>
 </div>
@@ -1252,9 +1343,9 @@ f_summary = get_shipment_summary(filtered)
 # ══════════════════════════════════════════════════════════════════
 if view_mode == "Home":
     st.markdown("""
-    <div style="text-align:center;padding:40px 0 20px 0;">
-        <div style="font-size:2rem;font-weight:800;color:var(--text-0);letter-spacing:-0.5px;">Logistics Optimizer</div>
-        <div style="font-size:0.95rem;color:var(--text-2);margin-top:6px;">Automated Operations Center &mdash; Select a solution to get started</div>
+    <div style="text-align:center;padding:60px 0 32px 0;">
+        <div style="font-size:1.5rem;font-weight:700;color:var(--text-0);letter-spacing:-0.03em;">Logistics Optimizer</div>
+        <div style="font-size:var(--text-sm);color:var(--text-2);margin-top:4px;letter-spacing:0.01em;">Automated Operations Center</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1262,19 +1353,19 @@ if view_mode == "Home":
 
     with _home_cols[0]:
         st.markdown("""
-        <div class="panel" style="text-align:center;padding:32px 20px;min-height:320px;display:flex;flex-direction:column;justify-content:space-between;">
+        <div class="home-card">
             <div>
-                <div style="font-size:2.5rem;margin-bottom:12px;">&#127758;</div>
-                <div style="font-size:1.15rem;font-weight:800;color:var(--text-0);margin-bottom:6px;">Macro Dashboard</div>
-                <div style="font-size:0.75rem;color:var(--accent);font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">National Operations View</div>
-                <div style="font-size:0.82rem;color:var(--text-1);line-height:1.6;">
+                <div class="home-card-icon" style="background:var(--accent-dim);">
+                    <span style="color:var(--accent);">&#9670;</span>
+                </div>
+                <div class="home-card-title">Macro Dashboard</div>
+                <div class="home-card-tag" style="color:var(--accent-text);">National Operations</div>
+                <div class="home-card-desc">
                     Government-level shipment intelligence across all ports, routes, and companies.
-                    Real-time KPIs, delay analytics, port throughput, and national fleet monitoring.
+                    Real-time KPIs, delay analytics, and national fleet monitoring.
                 </div>
             </div>
-            <div style="margin-top:16px;">
-                <div style="font-size:0.72rem;color:var(--text-2);margin-bottom:8px;">Best for: Ministry of Transport, Customs Authority, Regulatory Bodies</div>
-            </div>
+            <div class="home-card-footer">Ministry of Transport &middot; Customs Authority &middot; Regulatory</div>
         </div>
         """, unsafe_allow_html=True)
         if st.button("Open Macro Dashboard", key="home_macro", use_container_width=True):
@@ -1283,19 +1374,19 @@ if view_mode == "Home":
 
     with _home_cols[1]:
         st.markdown("""
-        <div class="panel" style="text-align:center;padding:32px 20px;min-height:320px;display:flex;flex-direction:column;justify-content:space-between;">
+        <div class="home-card">
             <div>
-                <div style="font-size:2.5rem;margin-bottom:12px;">&#128666;</div>
-                <div style="font-size:1.15rem;font-weight:800;color:var(--text-0);margin-bottom:6px;">Micro Dashboard</div>
-                <div style="font-size:0.75rem;color:var(--blue);font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">Company Fleet Monitoring</div>
-                <div style="font-size:0.82rem;color:var(--text-1);line-height:1.6;">
+                <div class="home-card-icon" style="background:var(--blue-dim);">
+                    <span style="color:var(--blue);">&#9632;</span>
+                </div>
+                <div class="home-card-title">Micro Dashboard</div>
+                <div class="home-card-tag" style="color:var(--blue);">Company Fleet Monitoring</div>
+                <div class="home-card-desc">
                     Per-company live monitoring of trucks, drivers, shipments, and delivery performance.
-                    Track individual shipments, driver efficiency, and fleet utilization.
+                    Track individual shipments and fleet utilization.
                 </div>
             </div>
-            <div style="margin-top:16px;">
-                <div style="font-size:0.72rem;color:var(--text-2);margin-bottom:8px;">Best for: Fleet Managers, Logistics Coordinators, Operations Teams</div>
-            </div>
+            <div class="home-card-footer">Fleet Managers &middot; Logistics Coordinators &middot; Operations</div>
         </div>
         """, unsafe_allow_html=True)
         if st.button("Open Micro Dashboard", key="home_micro", use_container_width=True):
@@ -1304,19 +1395,19 @@ if view_mode == "Home":
 
     with _home_cols[2]:
         st.markdown("""
-        <div class="panel" style="text-align:center;padding:32px 20px;min-height:320px;display:flex;flex-direction:column;justify-content:space-between;">
+        <div class="home-card">
             <div>
-                <div style="font-size:2.5rem;margin-bottom:12px;">&#9881;</div>
-                <div style="font-size:1.15rem;font-weight:800;color:var(--text-0);margin-bottom:6px;">Shipment Planner</div>
-                <div style="font-size:0.75rem;color:var(--green);font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">Dispatch Optimization Engine</div>
-                <div style="font-size:0.82rem;color:var(--text-1);line-height:1.6;">
-                    AI-driven dispatch planner that ranks all pending orders by criticality,
-                    auto-assigns trucks &amp; drivers, computes dynamic pricing, and recommends hiring.
+                <div class="home-card-icon" style="background:var(--green-dim);">
+                    <span style="color:var(--green);">&#9650;</span>
+                </div>
+                <div class="home-card-title">Shipment Planner</div>
+                <div class="home-card-tag" style="color:var(--green);">Dispatch Optimization</div>
+                <div class="home-card-desc">
+                    Dispatch planner that ranks pending orders by criticality,
+                    auto-assigns trucks &amp; drivers, and computes dynamic pricing.
                 </div>
             </div>
-            <div style="margin-top:16px;">
-                <div style="font-size:0.72rem;color:var(--text-2);margin-bottom:8px;">Best for: Dispatch Managers, Pricing Analysts, Capacity Planners</div>
-            </div>
+            <div class="home-card-footer">Dispatch Managers &middot; Pricing Analysts &middot; Capacity Planning</div>
         </div>
         """, unsafe_allow_html=True)
         if st.button("Open Shipment Planner", key="home_planner", use_container_width=True):
@@ -1360,7 +1451,7 @@ elif view_mode == "Macro":
         for _ki, (_col, (_label, _val, _color, _icon, _filter)) in enumerate(zip(_cols, _kpi_row)):
             with _col:
                 _is_active = _maf == _filter if _filter else False
-                _border = f"border:2px solid #4285F4;background:rgba(66,133,244,0.08);" if _is_active else ""
+                _border = f"border-color:var(--accent);background:var(--accent-dim);" if _is_active else ""
                 st.markdown(
                     f'<div class="kpi" style="{_border}">'
                     f'<div class="kpi-accent" style="background:{_color};"></div>'
@@ -1570,7 +1661,7 @@ elif view_mode == "Micro":
             for _ki, (_col, (_label, _val, _color, _icon, _filter)) in enumerate(zip(_cols, _kpi_row)):
                 with _col:
                     _is_active = _mkf == _filter if _filter else False
-                    _border = f"border:2px solid #4285F4;background:rgba(66,133,244,0.08);" if _is_active else ""
+                    _border = f"border-color:var(--accent);background:var(--accent-dim);" if _is_active else ""
                     st.markdown(
                         f'<div class="kpi" style="{_border}">'
                         f'<div class="kpi-accent" style="background:{_color};"></div>'
@@ -2347,20 +2438,20 @@ elif view_mode == "Micro":
         with kpi_cols[0]:
             st.markdown(f"""
             <div class="panel" style="text-align:center;">
-                <div style="font-size:0.72rem;color:var(--text-1);text-transform:uppercase;letter-spacing:1px;">Total Est. Revenue</div>
-                <div style="font-size:1.5rem;font-weight:800;color:var(--accent);">{total_rev:,.0f} <span style="font-size:0.7rem;">SAR</span></div>
+                <div style="font-size:0.72rem;color:var(--text-1);text-transform:uppercase;letter-spacing:0.04em;">Total Est. Revenue</div>
+                <div style="font-size:1.5rem;font-weight:700;color:var(--accent);">{total_rev:,.0f} <span style="font-size:0.7rem;">SAR</span></div>
             </div>""", unsafe_allow_html=True)
         with kpi_cols[1]:
             st.markdown(f"""
             <div class="panel" style="text-align:center;">
-                <div style="font-size:0.72rem;color:var(--text-1);text-transform:uppercase;letter-spacing:1px;">Cooled Cargo Value</div>
-                <div style="font-size:1.5rem;font-weight:800;color:var(--blue);">{cooled_rev:,.0f} <span style="font-size:0.7rem;">SAR</span></div>
+                <div style="font-size:0.72rem;color:var(--text-1);text-transform:uppercase;letter-spacing:0.04em;">Cooled Cargo Value</div>
+                <div style="font-size:1.5rem;font-weight:700;color:var(--blue);">{cooled_rev:,.0f} <span style="font-size:0.7rem;">SAR</span></div>
             </div>""", unsafe_allow_html=True)
         with kpi_cols[2]:
             st.markdown(f"""
             <div class="panel" style="text-align:center;">
-                <div style="font-size:0.72rem;color:var(--text-1);text-transform:uppercase;letter-spacing:1px;">Revenue at Risk</div>
-                <div style="font-size:1.5rem;font-weight:800;color:var(--red);">{risk_rev:,.0f} <span style="font-size:0.7rem;">SAR</span></div>
+                <div style="font-size:0.72rem;color:var(--text-1);text-transform:uppercase;letter-spacing:0.04em;">Revenue at Risk</div>
+                <div style="font-size:1.5rem;font-weight:700;color:var(--red);">{risk_rev:,.0f} <span style="font-size:0.7rem;">SAR</span></div>
             </div>""", unsafe_allow_html=True)
 
         # ── Cooled Fleet Priority Ranking Table ──
@@ -2412,7 +2503,7 @@ elif view_mode == "Micro":
                     <div class="panel" style="margin-bottom:10px;">
                         <div style="font-weight:700;color:var(--text-0);font-size:0.82rem;margin-bottom:6px;">{dopt['driver_name']}</div>
                         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-                            <span style="font-size:1.3rem;font-weight:800;color:{score_color};">{score}</span>
+                            <span style="font-size:1.3rem;font-weight:700;color:{score_color};">{score}</span>
                             <span style="font-size:0.7rem;color:var(--text-1);">/ 100 efficiency</span>
                         </div>
                         <div style="font-size:0.72rem;color:var(--text-1);margin-bottom:4px;">
@@ -2722,8 +2813,8 @@ elif view_mode == "Planner":
             with _kl:
                 st.markdown(f"""
                 <div class="panel" style="text-align:center;padding:12px 8px;">
-                    <div style="font-size:0.68rem;color:var(--text-2);text-transform:uppercase;letter-spacing:1px;">{_kv[0]}</div>
-                    <div style="font-size:1.3rem;font-weight:800;color:{_kv[3]};">{_kv[1]} <span style="font-size:0.65rem;color:var(--text-2);">{_kv[2]}</span></div>
+                    <div style="font-size:0.68rem;color:var(--text-2);text-transform:uppercase;letter-spacing:0.04em;">{_kv[0]}</div>
+                    <div style="font-size:1.3rem;font-weight:700;color:{_kv[3]};">{_kv[1]} <span style="font-size:0.65rem;color:var(--text-2);">{_kv[2]}</span></div>
                 </div>""", unsafe_allow_html=True)
 
         # ══════════════════════════════════════════════════════════
@@ -2767,14 +2858,14 @@ elif view_mode == "Planner":
             _trk = _item.get("assigned_truck", {})
 
             _table_rows += f"""<tr style="background:{_row_bg};border-bottom:1px solid var(--border);">
-                <td style="padding:8px 6px;text-align:center;font-weight:800;color:var(--accent);font-size:0.9rem;">{_item["rank"]}</td>
+                <td style="padding:8px 6px;text-align:center;font-weight:700;color:var(--accent);font-size:0.9rem;">{_item["rank"]}</td>
                 <td style="padding:8px 6px;color:var(--text-0);font-weight:600;font-size:0.72rem;">{_item["order_ref"] or _item["id"]}</td>
                 <td style="padding:8px 6px;color:var(--text-1);font-size:0.72rem;">{_item["customer_name"]}</td>
                 <td style="padding:8px 6px;color:var(--text-1);font-size:0.74rem;">{"&#10052; " if _item["is_cooled"] else ""}{_item["cargo"]}</td>
                 <td style="padding:8px 6px;text-align:center;"><span class="pill {_pri_pill}" style="font-size:0.65rem;">{_item["priority"]}</span></td>
                 <td style="padding:8px 6px;color:var(--text-1);font-size:0.72rem;">{_item["origin"].split("(")[0].strip()} &#10132; {_item["destination"]}</td>
                 <td style="padding:8px 6px;text-align:right;color:{_buf_color};font-weight:700;">{_item["buffer_hrs"]:.1f}h</td>
-                <td style="padding:8px 6px;text-align:right;color:{_score_color};font-weight:800;font-size:0.85rem;">{_sc:.0f}</td>
+                <td style="padding:8px 6px;text-align:right;color:{_score_color};font-weight:700;font-size:0.85rem;">{_sc:.0f}</td>
                 <td style="padding:8px 6px;text-align:right;color:var(--text-0);">{_item["cost"]:,.0f}</td>
                 <td style="padding:8px 6px;text-align:right;color:var(--green);font-weight:700;">{_item["price"]:,.0f}</td>
                 <td style="padding:8px 6px;text-align:right;color:var(--accent);font-weight:700;">{_item["profit"]:,.0f}</td>
@@ -2871,7 +2962,7 @@ elif view_mode == "Planner":
                 _load_items += (
                     f'<div style="display:flex;align-items:center;gap:12px;padding:6px 0;'
                     f'border-bottom:1px solid var(--border);">'
-                    f'<span style="font-weight:800;color:var(--accent);width:20px;">{_li+1}.</span>'
+                    f'<span style="font-weight:700;color:var(--accent);width:20px;">{_li+1}.</span>'
                     f'<span style="color:var(--text-0);font-weight:600;min-width:140px;">{_load["order_ref"] or _load["id"]}</span>'
                     f'<span style="color:var(--text-1);font-size:0.78rem;">&#10132; {_load["destination"]}</span>'
                     f'<span style="color:{_pri_c};font-size:0.72rem;font-weight:600;">{_load["priority"]}</span>'
