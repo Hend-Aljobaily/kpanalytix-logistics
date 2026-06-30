@@ -1089,8 +1089,8 @@ with st.sidebar:
         # ── Micro Filters ──
         st.markdown("""
         <div style="padding:4px 0 12px 0;">
-            <div style="font-size:0.92rem;font-weight:700;color:var(--text-0);margin-bottom:2px;">Company Filters</div>
-            <div style="font-size:0.72rem;color:var(--text-2);">Filter by company & shipment data</div>
+            <div style="font-size:0.92rem;font-weight:700;color:var(--text-0);margin-bottom:2px;">Fleet Monitoring</div>
+            <div style="font-size:0.72rem;color:var(--text-2);">Filter shipments &amp; fleet data</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1123,7 +1123,7 @@ with st.sidebar:
         # ── Planner — Decision Parameters ──
         st.markdown("""
         <div style="padding:4px 0 12px 0;">
-            <div style="font-size:0.92rem;font-weight:700;color:var(--text-0);margin-bottom:2px;">Shipment Planner</div>
+            <div style="font-size:0.92rem;font-weight:700;color:var(--text-0);margin-bottom:2px;">Dispatch Optimizer</div>
             <div style="font-size:0.72rem;color:var(--text-2);">Auto-optimize dispatch for all pending shipments</div>
         </div>
         """, unsafe_allow_html=True)
@@ -1338,20 +1338,17 @@ if view_mode == "Home":
         st.markdown("""
         <div class="home-card">
             <div>
-                <div class="home-card-icon" style="background:var(--accent-dim);">
-                    <span style="color:var(--accent);font-weight:700;font-size:1.1rem;">M</span>
-                </div>
-                <div class="home-card-title">Macro Dashboard</div>
-                <div class="home-card-tag" style="color:var(--accent-text);">National Operations</div>
+                <div class="home-card-title">Operations Overview</div>
+                <div class="home-card-tag" style="color:var(--accent-text);">National Logistics Intelligence</div>
                 <div class="home-card-desc">
-                    Government-level shipment intelligence across all ports, routes, and companies.
-                    Real-time KPIs, delay analytics, and national fleet monitoring.
+                    Cross-network shipment intelligence across all ports, routes, and carriers.
+                    Real-time KPIs, delay analytics, and fleet performance tracking.
                 </div>
             </div>
-            <div class="home-card-footer">Ministry of Transport &middot; Customs Authority &middot; Regulatory</div>
+            <div class="home-card-footer">Executive Leadership &middot; Operations Directors &middot; Regulatory</div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Open Macro Dashboard", key="home_macro", use_container_width=True):
+        if st.button("Open Operations Overview", key="home_macro", use_container_width=True):
             st.session_state.view_mode = "Macro"
             st.rerun()
 
@@ -1359,20 +1356,17 @@ if view_mode == "Home":
         st.markdown("""
         <div class="home-card">
             <div>
-                <div class="home-card-icon" style="background:var(--blue-dim);">
-                    <span style="color:var(--blue);font-weight:700;font-size:1.1rem;">F</span>
-                </div>
-                <div class="home-card-title">Micro Dashboard</div>
-                <div class="home-card-tag" style="color:var(--blue);">Company Fleet Monitoring</div>
+                <div class="home-card-title">Fleet Monitoring</div>
+                <div class="home-card-tag" style="color:var(--blue);">Live Fleet &amp; Shipment Tracking</div>
                 <div class="home-card-desc">
-                    Per-company live monitoring of trucks, drivers, shipments, and delivery performance.
-                    Track individual shipments and fleet utilization.
+                    Live monitoring of trucks, drivers, shipments, and delivery performance.
+                    Track individual shipments, driver compliance, and fleet utilization.
                 </div>
             </div>
             <div class="home-card-footer">Fleet Managers &middot; Logistics Coordinators &middot; Operations</div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Open Micro Dashboard", key="home_micro", use_container_width=True):
+        if st.button("Open Fleet Monitoring", key="home_micro", use_container_width=True):
             st.session_state.view_mode = "Micro"
             st.rerun()
 
@@ -1380,20 +1374,17 @@ if view_mode == "Home":
         st.markdown("""
         <div class="home-card">
             <div>
-                <div class="home-card-icon" style="background:var(--green-dim);">
-                    <span style="color:var(--green);font-weight:700;font-size:1.1rem;">P</span>
-                </div>
-                <div class="home-card-title">Shipment Planner</div>
-                <div class="home-card-tag" style="color:var(--green);">Dispatch Optimization</div>
+                <div class="home-card-title">Dispatch Optimizer</div>
+                <div class="home-card-tag" style="color:var(--green);">Smart Dispatch &amp; Pricing</div>
                 <div class="home-card-desc">
-                    Dispatch planner that ranks pending orders by criticality,
-                    auto-assigns trucks &amp; drivers, and computes dynamic pricing.
+                    Ranks pending orders by criticality, auto-assigns trucks &amp; drivers,
+                    and computes dynamic pricing with margin optimization.
                 </div>
             </div>
             <div class="home-card-footer">Dispatch Managers &middot; Pricing Analysts &middot; Capacity Planning</div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Open Shipment Planner", key="home_planner", use_container_width=True):
+        if st.button("Open Dispatch Optimizer", key="home_planner", use_container_width=True):
             st.session_state.view_mode = "Planner"
             st.rerun()
 
@@ -2581,7 +2572,7 @@ elif view_mode == "Planner":
     st.markdown(f"""
     <div class="company-header">
         <div>
-            <div class="ch-name">Shipment Dispatch Planner</div>
+            <div class="ch-name">Dispatch Optimizer</div>
             <div class="ch-detail">{_plan_company["name"]} &bull; {_plan_company.get("specialization", "")} &bull; {len(_comp_shipments)} pending orders &bull; via {_plan_company.get("erp_system", "ERP")}</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
@@ -3139,6 +3130,6 @@ elif view_mode == "Planner":
         st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
         _mon_cols = st.columns([3, 1])
         with _mon_cols[1]:
-            if st.button("Monitor Live in Micro View", key="planner_to_micro", use_container_width=True):
+            if st.button("Monitor Live in Fleet View", key="planner_to_micro", use_container_width=True):
                 st.session_state.view_mode = "Micro"
                 st.rerun()
