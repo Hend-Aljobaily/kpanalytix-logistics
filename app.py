@@ -1370,6 +1370,7 @@ if view_mode == "Home":
         """, unsafe_allow_html=True)
         if st.button("Open Macro Dashboard", key="home_macro", use_container_width=True):
             st.session_state.view_mode = "Macro"
+            st.session_state.view_mode_radio = "Macro"
             st.rerun()
 
     with _home_cols[1]:
@@ -1391,6 +1392,7 @@ if view_mode == "Home":
         """, unsafe_allow_html=True)
         if st.button("Open Micro Dashboard", key="home_micro", use_container_width=True):
             st.session_state.view_mode = "Micro"
+            st.session_state.view_mode_radio = "Micro"
             st.rerun()
 
     with _home_cols[2]:
@@ -1412,6 +1414,7 @@ if view_mode == "Home":
         """, unsafe_allow_html=True)
         if st.button("Open Shipment Planner", key="home_planner", use_container_width=True):
             st.session_state.view_mode = "Planner"
+            st.session_state.view_mode_radio = "Planner"
             st.rerun()
 
 
