@@ -39,7 +39,7 @@ from map_utils import (
     add_optimization_routes,
 )
 from mock_data import generate_shipments, get_shipment_summary, get_port_summary
-from company_data import generate_company_data, get_company_summary, COMPANIES
+from company_data import generate_company_data, get_company_summary, COMPANIES, DEMO_COMPANY_ID
 from delay_analytics_data import generate_analytics_data, generate_route_options
 
 # ── Page Config ──
@@ -1022,14 +1022,14 @@ with st.sidebar:
     filter_status = []
     filter_priority = []
     filter_delivery = []
-    micro_sb_company = None
+    micro_sb_company = DEMO_COMPANY_ID
     micro_sb_country = []
     micro_sb_city = []
     micro_sb_status = []
     micro_sb_priority = []
     micro_sb_delivery = []
     # Planner inputs
-    planner_company = None
+    planner_company = DEMO_COMPANY_ID
     planner_origin = None
     planner_dest = None
     planner_cargo = None
@@ -1093,14 +1093,9 @@ with st.sidebar:
         </div>
         """, unsafe_allow_html=True)
 
-        company_names_sb = {c["id"]: c["name"] for c in company_data["companies"]}
-        company_ids_sb = list(company_names_sb.keys())
-        micro_sb_company = st.selectbox(
-            "Company",
-            options=company_ids_sb,
-            format_func=lambda x: company_names_sb[x],
-            key="micro_sb_company",
-        )
+        micro_sb_company = DEMO_COMPANY_ID
+        _demo_name = next(c["name"] for c in company_data["companies"] if c["id"] == DEMO_COMPANY_ID)
+        st.markdown(f'<div style="font-size:0.82rem;color:var(--text-0);font-weight:600;padding:2px 0 8px 0;">{_demo_name}</div>', unsafe_allow_html=True)
         micro_sb_country = st.multiselect("Destination Country", DEST_COUNTRIES, default=[], key="micro_sb_country")
         if micro_sb_country:
             _micro_city_opts = sorted(c for c, co in DEST_COUNTRY_MAP.items() if co in micro_sb_country)
@@ -1132,14 +1127,9 @@ with st.sidebar:
         </div>
         """, unsafe_allow_html=True)
 
-        _plan_company_names = {c["id"]: c["name"] for c in company_data["companies"]}
-        _plan_company_ids = list(_plan_company_names.keys())
-        planner_company = st.selectbox(
-            "Company",
-            options=_plan_company_ids,
-            format_func=lambda x: _plan_company_names[x],
-            key="planner_company",
-        )
+        planner_company = DEMO_COMPANY_ID
+        _plan_demo_name = next(c["name"] for c in company_data["companies"] if c["id"] == DEMO_COMPANY_ID)
+        st.markdown(f'<div style="font-size:0.82rem;color:var(--text-0);font-weight:600;padding:2px 0 8px 0;">{_plan_demo_name}</div>', unsafe_allow_html=True)
 
         # ── Company Focus ──
         st.markdown('<div style="font-size:0.72rem;color:var(--text-2);margin:12px 0 4px 0;text-transform:uppercase;letter-spacing:0.5px;">Company Focus</div>', unsafe_allow_html=True)
@@ -1348,7 +1338,7 @@ if view_mode == "Home":
         <div class="home-card">
             <div>
                 <div class="home-card-icon" style="background:var(--accent-dim);">
-                    <span style="color:var(--accent);">&#9670;</span>
+                    <span style="color:var(--accent);font-weight:700;font-size:1.1rem;">M</span>
                 </div>
                 <div class="home-card-title">Macro Dashboard</div>
                 <div class="home-card-tag" style="color:var(--accent-text);">National Operations</div>
@@ -1369,7 +1359,7 @@ if view_mode == "Home":
         <div class="home-card">
             <div>
                 <div class="home-card-icon" style="background:var(--blue-dim);">
-                    <span style="color:var(--blue);">&#9632;</span>
+                    <span style="color:var(--blue);font-weight:700;font-size:1.1rem;">F</span>
                 </div>
                 <div class="home-card-title">Micro Dashboard</div>
                 <div class="home-card-tag" style="color:var(--blue);">Company Fleet Monitoring</div>
@@ -1390,7 +1380,7 @@ if view_mode == "Home":
         <div class="home-card">
             <div>
                 <div class="home-card-icon" style="background:var(--green-dim);">
-                    <span style="color:var(--green);">&#9650;</span>
+                    <span style="color:var(--green);font-weight:700;font-size:1.1rem;">P</span>
                 </div>
                 <div class="home-card-title">Shipment Planner</div>
                 <div class="home-card-tag" style="color:var(--green);">Dispatch Optimization</div>
@@ -1717,12 +1707,17 @@ elif view_mode == "Micro":
         drv_rows = []
         for d in comp_drivers:
             status_pill_cls = {"active": "pill-green", "idle": "pill-amber", "off_duty": "pill-purple"}.get(d["status"], "pill-purple")
-            assignment = "-"
             truck_id = d.get("assigned_truck_id", "") or "-"
-            if d["assigned_shipment_id"]:
-                ship_match = next((s for s in comp_shipments if s["id"] == d["assigned_shipment_id"]), None)
-                if ship_match:
-                    assignment = f'{ship_match["id"]} ({ship_match["destination"]})'
+            _drv_sids = d.get("assigned_shipment_ids", [])
+            if _drv_sids:
+                _parts = []
+                for _sid in _drv_sids:
+                    _sm = next((s for s in comp_shipments if s["id"] == _sid), None)
+                    if _sm:
+                        _parts.append(f'{_sm["id"]} ({_sm["destination"]})')
+                assignment = " | ".join(_parts) if _parts else "-"
+            else:
+                assignment = "-"
 
             drv_rows.append({
                 "Name": d["name"],
@@ -1760,19 +1755,26 @@ elif view_mode == "Micro":
 
         # Driver info card
         shipment_info = ""
-        if sel_driver["assigned_shipment_id"]:
-            ship_match = next((s for s in comp_shipments if s["id"] == sel_driver["assigned_shipment_id"]), None)
-            if ship_match:
-                _ts = ship_match["time_status"]
-                _ts_pill = "pill-green" if _ts == "On Time" else ("pill-amber" if _ts == "At Risk" else "pill-red")
-                _port_short = ship_match["port"].split("(")[0].strip()
+        _sel_drv_sids = sel_driver.get("assigned_shipment_ids", [])
+        if _sel_drv_sids:
+            _info_parts = []
+            for _sid in _sel_drv_sids:
+                ship_match = next((s for s in comp_shipments if s["id"] == _sid), None)
+                if ship_match:
+                    _ts = ship_match["time_status"]
+                    _ts_pill = "pill-green" if _ts == "On Time" else ("pill-amber" if _ts == "At Risk" else "pill-red")
+                    _port_short = ship_match["port"].split("(")[0].strip()
+                    _info_parts.append(
+                        f'<div style="font-size:0.85rem;color:var(--text-0);margin-bottom:4px;">'
+                        f'<b>{ship_match["id"]}</b> &mdash; {_port_short} &rarr; {ship_match["destination"]}'
+                        f' <span class="pill {_ts_pill}" style="margin-left:8px;">{_ts}</span>'
+                        '</div>'
+                    )
+            if _info_parts:
                 shipment_info = (
                     '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">'
-                    '<div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-2);margin-bottom:8px;">Current Assignment</div>'
-                    f'<div style="font-size:0.85rem;color:var(--text-0);">'
-                    f'<b>{ship_match["id"]}</b> &mdash; {_port_short} &rarr; {ship_match["destination"]}'
-                    f' <span class="pill {_ts_pill}" style="margin-left:8px;">{_ts}</span>'
-                    '</div></div>'
+                    f'<div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-2);margin-bottom:8px;">Assignments ({len(_info_parts)})</div>'
+                    + "".join(_info_parts) + '</div>'
                 )
 
         st.markdown(f"""
@@ -1802,10 +1804,10 @@ elif view_mode == "Micro":
         """, unsafe_allow_html=True)
 
         # Driver route map — full route with clickable alternatives
-        if sel_driver["assigned_shipment_id"]:
-            _drv_ship = next((s for s in comp_shipments if s["id"] == sel_driver["assigned_shipment_id"]), None)
-        else:
-            _drv_ship = None
+        _drv_ship = None
+        _sel_drv_sids2 = sel_driver.get("assigned_shipment_ids", [])
+        if _sel_drv_sids2:
+            _drv_ship = next((s for s in comp_shipments if s["id"] == _sel_drv_sids2[0]), None)
 
         if _drv_ship and _drv_ship["route"]["waypoints"]:
             _drv_hotspots = analytics_data["location_hotspots"].get(selected_company_id, [])
@@ -1948,7 +1950,7 @@ elif view_mode == "Micro":
             # Build driver column mapping
             driver_col = {}
             for s in micro_filtered:
-                drv = next((d for d in comp_drivers if d.get("assigned_shipment_id") == s["id"]), None)
+                drv = next((d for d in comp_drivers if s["id"] in d.get("assigned_shipment_ids", [])), None)
                 driver_col[s["id"]] = {"Driver": drv["name"] if drv else "-"}
 
             render_shipment_detail(micro_filtered, "micro")
@@ -2387,7 +2389,7 @@ elif view_mode == "Micro":
                                 st.session_state[f"opt_route_sel_{selected_company_id}_{inc_idx}"] = opt["name"]
                                 st.rerun()
 
-                drv_for_ship = next((d for d in comp_drivers if d.get("assigned_shipment_id") == inc["shipment_id"]), None)
+                drv_for_ship = next((d for d in comp_drivers if inc["shipment_id"] in d.get("assigned_shipment_ids", [])), None)
                 drv_name = drv_for_ship["name"] if drv_for_ship else "driver"
                 st.markdown(f"""
                 <div class="recovery ok" style="margin-bottom:20px;">
@@ -2721,7 +2723,8 @@ elif view_mode == "Planner":
         # TRUCK / DRIVER AUTO-ASSIGNMENT
         # ══════════════════════════════════════════════════════════
         _used_trucks = set()
-        _used_drivers = set()
+        _driver_load_count = {d["id"]: 0 for d in _plan_drivers}
+        _PLAN_MAX_LOADS = 4
         _assigned = []
         _unassigned = []
 
@@ -2742,30 +2745,29 @@ elif view_mode == "Planner":
                 and t["type"] == _item["truck_type"]
             ]
             if not _cand_trucks:
-                # Fallback: any available truck
                 _cand_trucks = [
                     t for t in _plan_trucks
                     if t["id"] not in _used_trucks and t["status"] != "maintenance"
                 ]
             _sel_truck = min(_cand_trucks, key=lambda t: t["mileage_km"]) if _cand_trucks else None
 
-            # Find best driver: idle first, highest efficiency, not used
+            # Find best driver: fewest loads, under MAX_LOADS, highest efficiency
             _cand_drivers = [
                 d for d in _plan_drivers
-                if d["id"] not in _used_drivers
+                if _driver_load_count[d["id"]] < _PLAN_MAX_LOADS
                 and d["status"] != "off_duty"
             ]
             if not _cand_drivers:
                 _cand_drivers = [
                     d for d in _plan_drivers
-                    if d["id"] not in _used_drivers
+                    if _driver_load_count[d["id"]] < _PLAN_MAX_LOADS
                 ]
-            _cand_drivers.sort(key=lambda d: d.get("_eff_score", 0), reverse=True)
+            _cand_drivers.sort(key=lambda d: (_driver_load_count[d["id"]], -d.get("_eff_score", 0)))
             _sel_driver = _cand_drivers[0] if _cand_drivers else None
 
             if _sel_truck and _sel_driver:
                 _used_trucks.add(_sel_truck["id"])
-                _used_drivers.add(_sel_driver["id"])
+                _driver_load_count[_sel_driver["id"]] += 1
                 _item["assigned_truck"] = _sel_truck
                 _item["assigned_driver"] = _sel_driver
                 _item["rank"] = len(_assigned) + 1
@@ -3138,5 +3140,4 @@ elif view_mode == "Planner":
         with _mon_cols[1]:
             if st.button("Monitor Live in Micro View", key="planner_to_micro", use_container_width=True):
                 st.session_state.view_mode = "Micro"
-                st.session_state.micro_sb_company = planner_company
                 st.rerun()

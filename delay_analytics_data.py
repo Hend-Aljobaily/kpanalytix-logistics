@@ -599,12 +599,12 @@ def generate_fleet_recommendations(shipments, company_data, company_id):
 
     recommendations = []
 
-    # ── Build driver→shipment lookup ──
+    # ── Build driver→shipment lookup (first assigned shipment) ──
     driver_shipment_map = {}
     for d in comp_drivers:
-        sid = d.get("assigned_shipment_id")
-        if sid:
-            matched = next((s for s in comp_shipments if s["id"] == sid), None)
+        _sids = d.get("assigned_shipment_ids", [])
+        if _sids:
+            matched = next((s for s in comp_shipments if s["id"] == _sids[0]), None)
             driver_shipment_map[d["id"]] = matched
 
     # ── Cooled Priority Table ──
@@ -614,7 +614,7 @@ def generate_fleet_recommendations(shipments, company_data, company_id):
     for rank, s in enumerate(cooled_sorted, 1):
         assigned_driver = None
         for d in comp_drivers:
-            if d.get("assigned_shipment_id") == s["id"]:
+            if s["id"] in d.get("assigned_shipment_ids", []):
                 assigned_driver = d["name"]
                 break
         cooled_priority_table.append({

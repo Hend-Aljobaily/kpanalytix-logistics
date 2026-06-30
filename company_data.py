@@ -14,7 +14,7 @@ COMPANIES = [
         "id": "CMP-001",
         "name": "Al Jazirah Logistics",
         "hq_city": "Riyadh",
-        "fleet_size": 18,
+        "fleet_size": 25,
         "specialization": "General Freight & Industrial",
         "order_prefix": "AJL",
         "erp_system": "SAP S/4HANA",
@@ -65,6 +65,8 @@ COMPANIES = [
         "erp_system": "Oracle NetSuite",
     },
 ]
+
+DEMO_COMPANY_ID = "CMP-001"  # Al Jazirah Logistics
 
 # Customer reference prefixes (for the end-customer who placed the order)
 _CUSTOMER_NAMES = [
@@ -156,7 +158,7 @@ def _generate_drivers(company, count):
             "status": "off_duty",  # will be updated by assignment logic
             "current_city": loc_city,
             "current_location": loc_coords,
-            "assigned_shipment_id": None,
+            "assigned_shipment_ids": [],
             "assigned_truck_id": None,
             "stats": {
                 "total_deliveries": random.randint(120, 980),
@@ -222,84 +224,95 @@ def generate_company_data(shipments):
         company = dict(comp)
         all_companies.append(company)
 
-        driver_count = random.randint(5, 8)
+        if company["id"] == DEMO_COMPANY_ID:
+            driver_count = 12
+            truck_count = 20
+        else:
+            driver_count = random.randint(3, 5)
+            truck_count = random.randint(3, 5)
         drivers = _generate_drivers(company, driver_count)
         all_drivers[company["id"]] = drivers
 
-        truck_count = random.randint(4, 8)
         trucks = _generate_trucks(company, truck_count)
         all_trucks[company["id"]] = trucks
 
-    # ── Assign shipments round-robin to companies ──
-    company_ids = [c["id"] for c in all_companies]
-    _comp_order_counters = {c["id"]: 0 for c in all_companies}
+    # ── Assign ALL shipments to demo company ──
     _comp_lookup = {c["id"]: c for c in all_companies}
+    _demo = _comp_lookup[DEMO_COMPANY_ID]
+    _order_seq = 0
     for idx, s in enumerate(shipments):
-        cid = company_ids[idx % len(company_ids)]
-        s["company_id"] = cid
+        s["company_id"] = DEMO_COMPANY_ID
 
-        # Generate company order reference (linked to their ERP/OMS)
-        _comp_order_counters[cid] += 1
-        _prefix = _comp_lookup[cid].get("order_prefix", "ORD")
-        _seq = _comp_order_counters[cid]
-        s["order_ref"] = f"ORD-{_prefix}-2026-{_seq:04d}"
+        _order_seq += 1
+        _prefix = _demo.get("order_prefix", "ORD")
+        s["order_ref"] = f"ORD-{_prefix}-2026-{_order_seq:04d}"
 
-        # Customer/client reference (who placed the order with the company)
         _cust = _CUSTOMER_NAMES[idx % len(_CUSTOMER_NAMES)]
         s["customer_ref"] = f"{_cust}-PO-{random.randint(10000, 99999)}"
         s["customer_name"] = _cust
-        s["erp_system"] = _comp_lookup[cid].get("erp_system", "SAP")
+        s["erp_system"] = _demo.get("erp_system", "SAP")
 
-    # ── Link drivers & trucks to active shipments ──
+    # ── Link drivers & trucks to active shipments (multi-load) ──
+    MAX_LOADS = 4
     for comp in all_companies:
         cid = comp["id"]
         comp_shipments = [s for s in shipments if s.get("company_id") == cid]
         drivers = all_drivers[cid]
         trucks = all_trucks[cid]
 
-        available_drivers = [d for d in drivers if d["status"] != "maintenance"]
-        available_trucks = [t for t in trucks if t["status"] not in ("maintenance",)]
+        _driver_load_count = {d["id"]: 0 for d in drivers}
+        available_trucks = [t for t in trucks if t["status"] != "maintenance"]
 
-        for i, s in enumerate(comp_shipments):
-            if i >= len(available_drivers) or i >= len(available_trucks):
+        for s in comp_shipments:
+            # Find driver with fewest loads, under MAX_LOADS
+            candidates = [d for d in drivers
+                          if _driver_load_count[d["id"]] < MAX_LOADS]
+            if not candidates:
                 break
+            candidates.sort(key=lambda d: (_driver_load_count[d["id"]], -d["stats"]["on_time_pct"]))
+            drv = candidates[0]
 
-            drv = available_drivers[i]
-            trk = available_trucks[i]
+            # Truck: reuse driver's existing truck or assign a new one
+            if drv["assigned_truck_id"]:
+                trk = next(t for t in trucks if t["id"] == drv["assigned_truck_id"])
+            else:
+                # Find available truck matching cargo type preference
+                if s["truck_type"] == "Cooled":
+                    matching = [t for t in available_trucks if t["type"] == "Cooled" and t["assigned_driver_id"] is None]
+                else:
+                    matching = [t for t in available_trucks if t["assigned_driver_id"] is None]
+                if not matching:
+                    matching = [t for t in available_trucks if t["assigned_driver_id"] is None]
+                if not matching:
+                    continue  # no truck available
+                trk = matching[0]
+                drv["assigned_truck_id"] = trk["id"]
+                trk["assigned_driver_id"] = drv["id"]
 
-            # Match truck type to shipment requirement
-            if s["truck_type"] == "Cooled":
-                cooled_trucks = [t for t in available_trucks if t["type"] == "Cooled" and t["assigned_shipment_id"] is None]
-                if cooled_trucks:
-                    trk = cooled_trucks[0]
+            drv["assigned_shipment_ids"].append(s["id"])
+            _driver_load_count[drv["id"]] += 1
+            trk["assigned_shipment_id"] = s["id"]  # last assigned for truck reference
 
-            # Assign
-            drv["assigned_shipment_id"] = s["id"]
-            drv["assigned_truck_id"] = trk["id"]
-            trk["assigned_driver_id"] = drv["id"]
-            trk["assigned_shipment_id"] = s["id"]
-
-            # Driver status based on shipment status
+            # Driver status based on shipment status (most active wins)
             if s["status"] == "In Transit":
                 drv["status"] = "active"
                 trk["status"] = "in_use"
-                # Update driver location to truck position
                 from map_utils import simulate_truck_position
                 pos = simulate_truck_position(s["route"]["waypoints"], s["progress"])
                 drv["current_location"] = (pos[0], pos[1])
                 drv["current_city"] = f"En route to {s['destination']}"
             elif s["status"] in ("At Port", "Vessel En Route"):
-                drv["status"] = "idle"
-                trk["status"] = "available"
-                port_coords = s["port_coords"]
-                drv["current_location"] = (port_coords["lat"], port_coords["lon"])
-                drv["current_city"] = s["port"].split("(")[0].strip()
+                if drv["status"] != "active":
+                    drv["status"] = "idle"
+                    port_coords = s["port_coords"]
+                    drv["current_location"] = (port_coords["lat"], port_coords["lon"])
+                    drv["current_city"] = s["port"].split("(")[0].strip()
             elif s["status"] == "Delivered":
-                drv["status"] = "idle"
-                trk["status"] = "available"
-                dest_coords = s["dest_coords"]
-                drv["current_location"] = (dest_coords["lat"], dest_coords["lon"])
-                drv["current_city"] = s["destination"]
+                if drv["status"] == "off_duty":
+                    drv["status"] = "idle"
+                    dest_coords = s["dest_coords"]
+                    drv["current_location"] = (dest_coords["lat"], dest_coords["lon"])
+                    drv["current_city"] = s["destination"]
 
     return {
         "companies": all_companies,
