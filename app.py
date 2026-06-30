@@ -905,8 +905,22 @@ st.markdown(f"""
 # ══════════════════════════════════════════════════════════════════
 # SIDEBAR
 # ══════════════════════════════════════════════════════════════════
+
+# Resolve view_mode before sidebar so we can hide the panel entirely on Home
+view_mode = st.session_state.view_mode
+
+# Hide sidebar completely on the Home page
+if view_mode == "Home":
+    st.markdown("""
+    <style>
+        section[data-testid="stSidebar"] { display: none !important; }
+        button[data-testid="stSidebarCollapsedControl"] { display: none !important; }
+        .stMainBlockContainer { max-width: 100% !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
 with st.sidebar:
-    # View selector
+    # View selector (only rendered when sidebar is visible, i.e. not Home)
     _view_options = ["Home", "Macro", "Micro", "Planner"]
     _view_idx = _view_options.index(st.session_state.view_mode) if st.session_state.view_mode in _view_options else 0
     view_mode = st.radio(
